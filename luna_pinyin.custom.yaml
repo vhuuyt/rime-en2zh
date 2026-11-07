@@ -8,6 +8,7 @@
 patch:
   # 整表重写：lua 处理器要在 punctuator / key_binder 之前
   engine/processors:
+    - lua_processor@*mode_switch        # Shift 单击切到「英文模式」/ 切回来
     - lua_processor@*select_character   # 以词定字
     - lua_processor@*typst_shortcuts    # 快捷片段
     - ascii_composer

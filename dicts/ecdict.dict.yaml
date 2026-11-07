@@ -1,5 +1,6 @@
 # Rime dictionary
 # encoding: utf-8
+#v1794067074
 #
 # 由 scripts/ecdict2dict.py 从 ECDICT 生成，请勿手改。
 # 数据源: https://github.com/skywind3000/ECDICT
@@ -9,8 +10,6 @@ name: ecdict
 version: "0.1"
 sort: by_weight
 use_preset_vocabulary: false
-import_tables:
-  - chem_ecdict
 ...
 
 alicyclic	alicyclic	10

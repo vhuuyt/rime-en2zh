@@ -12,6 +12,8 @@ do
 end
 
 
+package.path = dir .. "/lua/?.lua;" .. package.path   -- 让 require("en_dict_data") 找得到
+
 local ok1, req = pcall(dofile, dir .. "/lua/en_ai_request.lua")
 local ok2, cand = pcall(dofile, dir .. "/lua/en_ai_candidate.lua")
 if not (ok1 and ok2) then
@@ -45,6 +47,7 @@ local function mk_env(module, opts)
         ["en_ai/marker"] = "[AI]",
         ["en_ai/min_input_len"] = "2",
         ["en_ai/ai_dict"] = bridge .. "/ai_ecdict.dict.yaml",
+        ["en_ai/base_dict"] = bridge .. "/ecdict.dict.yaml",
         ["en_ai/tab"] = "Tab",
         ["en_ai/tab_step"] = "4",
         ["en_ai/commit_key"] = "Control+Return",
@@ -53,6 +56,7 @@ local function mk_env(module, opts)
         ["en_ai/delete_close"] = "1",
         ["en_ai/profiles"] = "minimax,openai",
         ["en_ai/ai_dict"] = bridge .. "/ai_ecdict.dict.yaml",
+        ["en_ai/base_dict"] = bridge .. "/ecdict.dict.yaml",
       }
       return map[path]
     end,
@@ -180,9 +184,9 @@ req.func(mk_key("a"), env)
 check("切回 minimax", profile() == "minimax", tostring(profile()))
 
 -- Ctrl+Delete：只删 AI 词库里的词
-local function write_ai_dict(rows)
+local function write_ai_dict(rows, ver)
   local f = io.open(bridge .. "/ai_ecdict.dict.yaml", "w")
-  f:write("# Rime dictionary\n# encoding: utf-8\n#v1\n---\nname: ai_ecdict\n...\n")
+  f:write("# Rime dictionary\n# encoding: utf-8\n#v", ver or "1", "\n---\nname: ai_ecdict\n...\n")
   for _, r in ipairs(rows) do f:write(r, "\n") end
   f:close()
 end
@@ -304,6 +308,15 @@ check("字母键不写暂停标记", pf == nil)
 if pf then pf:close() end
 
 -- ---------- 候选侧 ----------
+-- 本地词库（mock）
+local function write_base(rows, ver)
+  local f = io.open(bridge .. "/ecdict.dict.yaml", "w")
+  f:write("#v", ver or "1", "\n")
+  for _, r in ipairs(rows) do f:write(r, "\n") end
+  f:close()
+end
+write_base({ "hello\thello\t10", "interj. 喂；嘿\thello\t0",
+              "info\tinfo\t10", "n. 信息；资料\tinfo\t0" }, 1)
 local yielded = {}
 function Candidate(typ, start, end_, text, comment)
   return { type = typ, start = start, _end = end_, text = text, comment = comment, quality = 0 }
@@ -313,26 +326,6 @@ function yield(c) yielded[#yielded + 1] = c end
 local seg = { start = 0, _end = 5 }
 os.remove(bridge .. "/ai_profile.txt")          -- 先按"没切过档"来测
 local cenv = mk_env(cand, { input = "hello" })
-
-write_response("hello", "你好；喂")
-yielded = {}
-cand.func("hello", seg, cenv)
-check("命中时补一条候选", #yielded == 1, "n=" .. #yielded)
-check("候选文本 = 译文", yielded[1] and yielded[1].text == "你好；喂",
-      yielded[1] and yielded[1].text or "nil")
-check("候选注释 = [AI]", yielded[1] and yielded[1].comment == "[AI]")
-check("候选 quality 低（本地优先）", yielded[1] and yielded[1].quality < 1)
-
--- 请求词与当前输入不匹配 → 不补
-yielded = {}
-cand.func("help", seg, cenv)
-check("词不匹配不补候选", #yielded == 0, "n=" .. #yielded)
-
--- 缓存：response 被别的词覆盖后，旧词仍能出候选
-write_response("other", "别的")
-yielded = {}
-cand.func("hello", seg, cenv)
-check("缓存命中旧词", #yielded == 1 and yielded[1].text == "你好；喂")
 
 -- AI 关闭 → 不补
 local cenv_off = mk_env(cand, { input = "hello", ai = false })
@@ -346,60 +339,23 @@ yielded = {}
 cand.func("empty", seg, cenv)
 check("空译文不补候选", #yielded == 0)
 
--- ---------- saved.tsv（AI 存下来的词） ----------
-local function write_ai(ver, rows)
-  local f = io.open(bridge .. "/ai_ecdict.dict.yaml", "w")
-  f:write("# Rime dictionary\n# encoding: utf-8\n#v", ver, "\n---\nname: ai_ecdict\n...\n")
-  for _, r in ipairs(rows) do f:write(r, "\n") end
-  f:close()
-end
-
-local senv = mk_env(cand, { input = "typst" })
-write_ai("1", {
-  "typst\ttypst\t10",
-  "n. 排版系统\ttypst\t0",
-  "Typst\tTypst\t10",
-  "n. 排版系统\tTypst\t0",
-  "短语的\tphrasal\t0",
-})
-
+-- 大写词：按小写回退补一条候选
 yielded = {}
-cand.func("typst", seg, senv)
-check("AI 词库命中出候选", #yielded == 1, "n=" .. #yielded)
-check("显示释义（带词性）", yielded[1] and yielded[1].text == "n. 排版系统",
+cand.func("Info", seg, cenv)
+check("大写词补出候选", #yielded == 1, "n=" .. #yielded)
+check("大写候选保留原样", yielded[1] and yielded[1].text == "Info",
       yielded[1] and yielded[1].text or "nil")
-
-yielded = {}
-cand.func("Typst", seg, senv)
-check("大写条目也能查", #yielded == 1 and yielded[1].text == "n. 排版系统",
-      yielded[1] and yielded[1].text or "nil")
-
-yielded = {}
-cand.func("phrasal", seg, senv)
-check("没有原词行也能出候选", #yielded == 1 and yielded[1].text == "短语的",
-      yielded[1] and yielded[1].text or "nil")
-
--- 版本号变化才重读
-write_ai("2", { "typst\ttypst\t10", "排版系统v2\ttypst\t0" })
-yielded = {}
-cand.func("typst", seg, senv)
-check("版本变化后重读", #yielded == 1 and yielded[1].text == "排版系统v2",
-      yielded[1] and yielded[1].text or "nil")
-
--- 删掉文件后不再命中
-os.remove(bridge .. "/ai_ecdict.dict.yaml")
-yielded = {}
-cand.func("typst", seg, senv)
-check("词库删除后不再命中", #yielded == 0, "n=" .. #yielded)
-
--- 候选注释里带当前 AI 档位
-local f2 = io.open(bridge .. "/ai_profile.txt", "w"); f2:write("openai\n"); f2:close()
-local pe = mk_env(cand, { input = "hello" })
-write_response("hello", "你好；喂")
-yielded = {}
-cand.func("hello", seg, pe)
-check("注释显示当前档位", yielded[1] and yielded[1].comment == "[AI]·openai",
+check("大写候选带小写释义", yielded[1] and yielded[1].comment == "n. 信息；资料",
       yielded[1] and tostring(yielded[1].comment) or "nil")
+
+yielded = {}
+cand.func("HELLO", seg, cenv)
+check("全大写也能查到", #yielded == 1 and yielded[1].text == "HELLO")
+
+-- 小写词交给 table_translator，这里不重复出候选
+yielded = {}
+cand.func("hello", seg, cenv)
+check("小写词不由这里出候选", #yielded == 0, "n=" .. #yielded)
 
 rmdir(bridge)
 

@@ -14,6 +14,7 @@ import argparse
 import csv
 import os
 import re
+import time
 import sys
 from collections import OrderedDict
 
@@ -222,6 +223,7 @@ def main():
     with open(args.out, "w", encoding="utf-8", newline="\n") as out:
         out.write("# Rime dictionary\n")
         out.write("# encoding: utf-8\n")
+        out.write("#v%d\n" % int(time.time()))
         out.write("#\n")
         out.write("# 由 scripts/ecdict2dict.py 从 ECDICT 生成，请勿手改。\n")
         out.write("# 数据源: https://github.com/skywind3000/ECDICT\n")
@@ -249,7 +251,7 @@ def main():
 
     if args.chem_out:
         with open(args.chem_out, "w", encoding="utf-8", newline="\n") as out:
-            out.write("# Rime dictionary\n# encoding: utf-8\n#\n")
+            out.write("# Rime dictionary\n# encoding: utf-8\n#v%d\n" % int(time.time()))
             out.write("# 化学词库（基础词库，由 scripts/ecdict2dict.py 从 ECDICT 的 [化] 词条生成）\n")
             out.write("# 通过 ecdict.dict.yaml 的 import_tables 合并进主词库\n")
             out.write("---\n")

@@ -33,6 +33,7 @@ switches:
 
 engine:
   processors:
+    - lua_processor@*mode_switch        # Shift 单击切回中文方案
     - lua_processor@*en_ai_request
     - lua_processor@*typst_shortcuts   # Ctrl+. / Ctrl+Shift+, / Ctrl+Shift+G
     - ascii_composer
@@ -69,6 +70,10 @@ translator:
   enable_sentence: false
   enable_user_dict: false    # 查词不需要学习
   initial_quality: 0
+
+# 大写字母要留在输入框里（候选栏能查到），不要被 ascii_composer 截去"直写"
+ascii_composer:
+  inline_uppercase: false
 
 punctuator:
   import_preset: default

@@ -12,6 +12,8 @@ do
 end
 
 
+package.path = dir .. "/lua/?.lua;" .. package.path   -- 让 require("en_dict_data") 找得到
+
 local ok, M = pcall(dofile, dir .. "/lua/en_assoc.lua")
 if not ok or type(M) ~= "table" or type(M.func) ~= "function" then
   print("[FATAL] 加载 lua/en_assoc.lua 失败: " .. tostring(M))
@@ -26,9 +28,11 @@ os.execute('mkdir -p "' .. tmpdir .. '"')
 local base = tmpdir .. "/ecdict.dict.yaml"
 local aidict = tmpdir .. "/ai_ecdict.dict.yaml"
 
+local ver = 0
 local function write(path, body)
+  ver = ver + 1
   local f = io.open(path, "w")
-  f:write(body)
+  f:write("#v", ver, "\n", body)     -- 版本号变了 → 共享模块会重读
   f:close()
 end
 

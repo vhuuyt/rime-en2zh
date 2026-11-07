@@ -11,6 +11,7 @@ patch:
   # ---- 输入引擎：lua 组件必须排在最前 ----
   # 整表重写，顺序显式可读；其余项与 double_pinyin_mspy.schema.yaml 保持一致
   engine/processors:
+    - lua_processor@*mode_switch        # Shift 单击切到「英文模式」/ 切回来
     - lua_processor@*select_character   # 以词定字（要早于 punctuator / key_binder）
     - lua_processor@*typst_shortcuts    # 快捷片段
     - ascii_composer

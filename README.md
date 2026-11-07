@@ -30,10 +30,12 @@
 ├── vhuuyt.dict.yaml             中文词库入口（同上）
 ├── lua/                         输入法内部逻辑，全是 Lua（rime 自带，无依赖）
 │   ├── typst_shortcuts.lua      三方案：Ctrl+. / Ctrl+Shift+, / Ctrl+Shift+G
+│   ├── mode_switch.lua          三方案：Shift 单击切方案（中文 ⇄ 英文模式）
 │   ├── typst_dict.lua           三方案：输入 typ 出片段候选
 │   ├── select_character.lua     双拼/朙月：以词定字 [ ]
 │   ├── en_ai_request.lua        英文：按键处理（Tab / Ctrl+Enter / Ctrl+Delete / 档位同步）
-│   ├── en_ai_candidate.lua      英文：把桥查到的译文变成候选
+│   ├── en_ai_candidate.lua      英文：大写词按小写回退补候选
+│   ├── en_dict_data.lua         英文：词表共享模块（多组件共用一份）
 │   └── en_assoc.lua             英文：候选改造（释义贴尾部、滚动、补单词候选）
 ├── scripts/                     需要计时器/网络/进程的部分（Python，标准库）
 │   ├── ai_bridge.py             大模型桥（常驻）：计时、调 API、写词库、热重载
@@ -77,7 +79,9 @@
 
 | 键 | 作用 |
 |---|---|
+| **`Shift`（单击）** | **中文 ⇄ 英文模式**：中文方案里单击 Shift 切到「英文模式」（带释义），在英文模式里再单击切回刚才的中文方案。按住 Shift 打字不受影响（大写照常） |
 | `F4` / `Ctrl+Shift+E` / `` Ctrl+` `` | 方案选单（切换方案、切 AI 档位、AI 开关） |
+| `Caps Lock` | 系统级大写（英文模式里 Shift 用来切方案，大写用 Caps Lock） |
 
 ---
 

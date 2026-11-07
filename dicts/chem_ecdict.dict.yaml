@@ -1,6 +1,6 @@
 # Rime dictionary
 # encoding: utf-8
-#
+#v1794067074
 # 化学词库（基础词库，由 scripts/ecdict2dict.py 从 ECDICT 的 [化] 词条生成）
 # 通过 ecdict.dict.yaml 的 import_tables 合并进主词库
 ---

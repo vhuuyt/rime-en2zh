@@ -74,17 +74,45 @@ local function write_scroll(env, offset, input)
   end
 end
 
+-- 桥刚查完的译文（response.txt）
+local function read_response(dir)
+  local f = io.open(dir .. "/response.txt", "r")
+  if not f then return nil, nil end
+  local word = f:read("*l")
+  local text = f:read("*a")
+  f:close()
+  if not word or word == "" then return nil, nil end
+  text = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  return word, text
+end
+
+-- 释义来源：桥刚返回的译文优先，其次词库（本地 + AI 补录），大写词按小写回退
+local function meaning_for(env, text)
+  local word, got = read_response(env.dir)
+  if word == text and got and got ~= "" then
+    return got
+  end
+  local slot = env.words[text]
+  if slot and slot.meaning then
+    return slot.meaning
+  end
+  local lower = text:lower()
+  if lower ~= text then
+    slot = env.words[lower]
+    if slot and slot.meaning then
+      return slot.meaning
+    end
+  end
+  return nil
+end
+
 -- 记录"候选词 -> 完整释义"，供 Ctrl+Enter 把释义上屏用
 local function write_cands(env, items)
   local f = io.open(env.cands_file, "w")
   if not f then return end
   f:write(tostring(os.time()), "\n")
   for _, item in ipairs(items) do
-    local meaning = item.meaning
-    if not meaning then
-      local slot = env.words[item.text]
-      meaning = slot and slot.meaning
-    end
+    local meaning = item.meaning or meaning_for(env, item.text)
     if meaning and meaning ~= item.text then
       f:write(item.text, "\t", meaning, "\n")
     end
@@ -100,56 +128,12 @@ local function touch_marquee(env)
   end
 end
 
--- dict.yaml -> { coding -> { meaning = 第一条释义, word = 是否有原词行 } }
-local function load_dict(path, into, ver_out)
-  local f = io.open(path, "r")
-  if not f then return end
-  local ver
-  for line in f:lines() do
-    local v = line:match("^#v(%d+)")
-    if v then ver = v end
-    if line:sub(1, 1) ~= "#" and line:find("\t", 1, true) then
-      local cols = split_tabs(line)
-      if #cols >= 3 and cols[1] ~= "" and cols[2] ~= "" then
-        local code = cols[2]
-        local slot = into[code]
-        if not slot then
-          slot = {}
-          into[code] = slot
-        end
-        if cols[1] == code then
-          slot.word = true
-        elseif slot.meaning == nil then
-          slot.meaning = cols[1]
-        end
-      end
-    end
-  end
-  f:close()
-  if ver_out then ver_out[1] = ver end
-end
+-- 词表来自共享模块 en_dict_data.lua（多组件共用一份）
+local dict_data = require("en_dict_data")
 
+-- 词表：交给共享模块（内部按词库头部的 #v 版本号判断要不要重读）
 local function refresh(env)
-  if env.loaded then
-    local ver
-    local f = io.open(env.ai_path, "r")
-    if f then
-      for _ = 1, 8 do
-        local line = f:read("*l")
-        if not line then break end
-        local v = line:match("^#v(%d+)")
-        if v then ver = v break end
-      end
-      f:close()
-    end
-    if ver == env.ai_ver then return end
-  end
-  env.words = {}
-  load_dict(env.base_path, env.words)
-  local ver = {}
-  load_dict(env.ai_path, env.words, ver)
-  env.ai_ver = ver[1]
-  env.loaded = true
+  env.words = dict_data.load(env.base_path, env.ai_path)
 end
 
 local function back_segment(ctx)
@@ -210,8 +194,7 @@ function M.func(input, env)
 
   -- 词库（含 AI 补录）里都没有这个词时，补一个"单词"候选，保证空格上单词
   if not seen_exact and input_text:match(WORD_RE) then
-    local slot = env.words[input_text]
-    local meaning = (slot and slot.meaning) or dropped_meaning
+    local meaning = meaning_for(env, input_text) or dropped_meaning
     if meaning then
       local seg = back_segment(ctx)
       local cand = Candidate("en_ai", seg and seg.start or 0,
