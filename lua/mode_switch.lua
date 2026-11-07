@@ -27,6 +27,20 @@ local function current_schema(env)
   return (s and s.schema_id) or ""
 end
 
+-- Shift 键的 repr 带修饰键前缀（Weasel 里按下 Shift 时键盘状态里 Shift 已按下，
+-- 所以 repr 是 "Shift+Shift_L" 而不是 "Shift_L"），所以要按 keycode 判断。
+local XK_SHIFT_L = 0xFFE1
+local XK_SHIFT_R = 0xFFE2
+
+local function is_shift_key(key, repr)
+  local kc = key.keycode
+  if kc == XK_SHIFT_L or kc == XK_SHIFT_R then
+    return true
+  end
+  -- 兜底：按 repr 结尾判断
+  return repr:match("Shift_L$") ~= nil or repr:match("Shift_R$") ~= nil
+end
+
 function M.init(env)
   env.shift_down = false
   env.typed = false
@@ -35,7 +49,7 @@ end
 function M.func(key, env)
   local repr = key:repr()
 
-  if repr == "Shift_L" or repr == "Shift_R" then
+  if is_shift_key(key, repr) then
     if key:release() then
       -- 松开：只有「按下之后没按过别的键」才算单击
       local solo = env.shift_down and not env.typed

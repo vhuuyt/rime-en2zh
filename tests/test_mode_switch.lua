@@ -21,10 +21,13 @@ if not ok or type(M) ~= "table" or type(M.func) ~= "function" then
 end
 
 -- ---- mock ----
-local function mk_key(repr, release)
+-- 注意：Weasel 里 Shift 键事件的 repr 带修饰键前缀（"Shift+Shift_L"），
+-- 因为按下 Shift 时键盘状态里 Shift 已经是按下状态。
+local function mk_key(repr, release, keycode)
   return {
     repr = function() return repr end,
     release = function() return release and true or false end,
+    keycode = keycode or 0x61,      -- 默认当成普通字母 'a' 
   }
 end
 
@@ -67,12 +70,12 @@ print("== mode_switch 测试 ==")
 
 -- 1. 中文方案：Shift 按下 → 放行（不拦截，否则打不出大写）
 local env = mk_env("double_pinyin_mspy")
-local r = env.engine and M.func(mk_key("Shift_L"), env)
+local r = env.engine and M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env)
 check("Shift 按下不拦截", r == 2, "r=" .. tostring(r))
 check("Shift 按下不切方案", #env.applied == 0, "n=" .. #env.applied)
 
 -- 2. Shift 松开（期间没按别的键）→ 切到 english
-r = M.func(mk_key("Shift_L", true), env)
+r = M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env)
 check("Shift 松开切方案", r == 1, "r=" .. tostring(r))
 check("切到 english", env.applied[1] == "english", tostring(env.applied[1]))
 check("记下了来源方案", env.engine.context:get_property("last_cn_schema") == "double_pinyin_mspy")
@@ -80,40 +83,40 @@ check("记下了来源方案", env.engine.context:get_property("last_cn_schema")
 -- 3. english 方案：Shift 松开 → 切回刚才的中文方案
 local env2 = mk_env("english")
 env2.engine.context.set_property(env2.engine.context, "last_cn_schema", "luna_pinyin")
-M.func(mk_key("Shift_L"), env2)
-r = M.func(mk_key("Shift_L", true), env2)
+M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env2)
+r = M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env2)
 check("english 里 Shift 松开切回中文", r == 1, "r=" .. tostring(r))
 check("切回 luna_pinyin", env2.applied[1] == "luna_pinyin", tostring(env2.applied[1]))
 
 -- 4. english 方案里没有记录来源 → 用默认的双拼
 local env3 = mk_env("english")
-M.func(mk_key("Shift_R"), env3)
-M.func(mk_key("Shift_R", true), env3)
+M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env3)
+M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env3)
 check("没有记录时用默认方案", env3.applied[1] == "double_pinyin_mspy", tostring(env3.applied[1]))
 
 -- 5. 按住 Shift 打字 → 不切换
 local env4 = mk_env("double_pinyin_mspy")
-M.func(mk_key("Shift_L"), env4)          -- 按下
+M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env4)          -- 按下
 r = M.func(mk_key("a"), env4)              -- 按住 shift 打了字母
 check("按住 Shift 打字不拦截", r == 2, "r=" .. tostring(r))
-r = M.func(mk_key("Shift_L", true), env4)  -- 松开
+r = M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env4)  -- 松开
 check("按住 Shift 后松开不切换", #env4.applied == 0, "n=" .. #env4.applied)
 check("按住 Shift 后松开放行", r == 2, "r=" .. tostring(r))
 
 -- 6. 右 Shift 一样
 local env5 = mk_env("luna_pinyin")
-M.func(mk_key("Shift_R"), env5)
-M.func(mk_key("Shift_R", true), env5)
+M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env5)
+M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env5)
 check("右 Shift 也能切", env5.applied[1] == "english", tostring(env5.applied[1]))
 
 -- 7. 连续两次单击：切换 → 切回
 local env6 = mk_env("double_pinyin_mspy")
-M.func(mk_key("Shift_L"), env6)
-M.func(mk_key("Shift_L", true), env6)     -- → english
+M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env6)
+M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env6)     -- → english
 local env7 = mk_env("english")
 env7.engine.context.set_property(env7.engine.context, "last_cn_schema", "double_pinyin_mspy")
-M.func(mk_key("Shift_L"), env7)
-M.func(mk_key("Shift_L", true), env7)     -- → 回到中文
+M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env7)
+M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env7)     -- → 回到中文
 check("切过去再切回来", env7.applied[1] == "double_pinyin_mspy", tostring(env7.applied[1]))
 
 -- 8. 其它按键完全不干预

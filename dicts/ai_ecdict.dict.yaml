@@ -1,6 +1,6 @@
 # Rime dictionary
 # encoding: utf-8
-#v1794061032
+#v1794067578
 #
 # AI 补录词库（英文模式）—— 由 ai_bridge.py 自动追加，也可手工删改
 # 格式：文本 <TAB> 编码 <TAB> 权重
@@ -16,6 +16,8 @@ Debian	Debian	10
 n. Linux发行版	Debian	0
 Figma	Figma	10
 n. Figma，在线界面设计与协作软件	Figma	0
+Infor	Infor	10
+n. 企业软件公司	Infor	0
 Li	Li	10
 n. 李；锂	Li	0
 Ni	Ni	10
@@ -32,6 +34,8 @@ ai	ai	10
 n. 人工智能	ai	0
 astro	astro	10
 n. 宇航员（口语）	astro	0
+bx	bx	10
+n. 盒子；箱	bx	0
 ch	ch	10
 n. 章节（chapter的缩写）	ch	0
 cha	cha	10
@@ -44,8 +48,6 @@ figma	figma	10
 n. Figma，在线界面设计与协作软件	figma	0
 infor	infor	10
 n. 企业软件公司	infor	0
-Infor	Infor	10
-n. 企业软件公司	Infor	0
 jq	jq	10
 n. JSON处理工具	jq	0
 la	la	10
