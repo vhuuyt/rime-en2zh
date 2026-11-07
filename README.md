@@ -1,9 +1,12 @@
-# Rime 配置说明（这套配置是干什么的）
+# rime-en2zh —— 英文输入 + 中文释义 + 大模型实时翻译
 
-一整套给 Typst 写作者用的 Rime 方案：
+给 [Rime](https://rime.im/) 的一套双语方案。**在中文输入里顺手查英文词**：
 
-* **双拼 / 朙月拼音**：中文输入 + `typ` 片段词典 + 以词定字
-* **英文模式**：英文查词（本地 7 万词）+ 带释义的候选 + 可选的大模型翻译
+* **英文模式**：中文方案里单击 <kbd>Shift</kbd> → 切到英文模式，打字即出候选 —— 英文原词 + 中文释义；
+  <kbd>Ctrl+Enter</kbd> 直接把中文释义上屏。
+* **本地词库**：ECDICT 4 万高频词 + 3 万变形 + 1.6 万化学词条（`titrate`/`esterify`…），离线可用，不花钱。
+* **大模型实时翻译**：停手约 900ms，桥进程调 API 补一条 `[AI]` 候选（中文释义），同时写回词库 —— 下次再查这个词直接命中本地，不再发请求。
+* **附带**：双拼 / 朙月拼音方案、Typst 片段词典、以词定字（写作向彩蛋，不影响主线）。
 
 ```
 双击哪个都别删：build/ 是部署产物，*.userdb/ 是学习记录
@@ -14,6 +17,60 @@
 英文模式下打 `info`：候选是单词，释义贴在后面；空格上单词，`Ctrl+Enter` 上释义。
 
 ![英文模式候选](docs/images/english-mode.png)
+
+---
+
+## 零、安装
+
+### 1. 拉配置
+
+```bash
+git clone https://github.com/vhuuyt/rime-en2zh.git
+cd rime-en2zh
+```
+
+### 2. 拷进 Rime 用户目录
+
+Windows（PowerShell）：
+
+```powershell
+Copy-Item -Recurse -Force lua,scripts,dicts,docs,tests *.yaml "$env:APPDATA\Rime\"
+```
+
+macOS / Linux：
+
+```bash
+# macOS (Squirrel)
+cp -r lua scripts dicts docs tests *.yaml ~/Library/Application\ Support/Rime/
+# Linux ibus
+cp -r lua scripts dicts docs tests *.yaml ~/.config/ibus/rime/
+# Linux fcitx5
+cp -r lua scripts dicts docs tests *.yaml ~/.local/share/fcitx5/rime/
+```
+
+### 3. 生成英文词库
+
+英文词库不在仓库里（体积大），用 ECDICT csv 现生成：
+
+```powershell
+python scripts\ecdict2dict.py --csv C:\path\to\ecdict.csv `
+    --out dicts\ecdict.dict.yaml --chem-out dicts\chem_ecdict.dict.yaml --limit 40000
+```
+
+（`ecdict.csv` 来自 <https://github.com/skywind3000/ECDICT>，约 66MB。）
+
+### 4. 配置大模型 + 开机自启
+
+```powershell
+python scripts\ai_bridge.py --once hello     # 先验 key / 网络 / 解析
+python scripts\install_autostart.py          # 装开机自启（--remove 卸载，--show 查看）
+```
+
+模型档位写进 `%APPDATA%\Rime\ai_config.json`（该文件含 key，已 gitignore）—— 详见[第四节](#四接大模型)。
+
+### 5. 重新部署
+
+托盘图标 → 重新部署（macOS 用 Squirrel 的「重新部署」；或重启输入法）。部署后 `F4` 选单里就能选到「英文模式」。
 
 ---
 
