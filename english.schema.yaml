@@ -64,7 +64,7 @@ speller:
   delimiter: " "
 
 translator:
-  dictionary: ecdict
+  dictionary: en          # en.dict.yaml 只是 import_tables（dicts/ecdict + dicts/chem_ecdict）
   enable_completion: true    # 打 comp 也能补出 computer（注释里显示 ~uter）
   enable_sentence: false
   enable_user_dict: false    # 查词不需要学习

@@ -231,12 +231,6 @@ def main():
         out.write('version: "0.1"\n')
         out.write("sort: by_weight\n")
         out.write("use_preset_vocabulary: false\n")
-        if args.chem_out:
-            out.write("import_tables:\n")
-            name = os.path.basename(args.chem_out)
-            if name.endswith(".dict.yaml"):
-                name = name[: -len(".dict.yaml")]
-            out.write("  - %s\n" % name)
         out.write("...\n\n")
         for word, meanings in lines.items():
             out.write(f"{word}\t{word}\t10\n")

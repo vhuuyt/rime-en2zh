@@ -448,8 +448,8 @@ def ai_dict_path(cfg):
         return p
     if os.name == "nt":
         return os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"),
-                            "Rime", "ai_ecdict.dict.yaml")
-    return os.path.expanduser("~/Library/Rime/ai_ecdict.dict.yaml")
+                            "Rime", "dicts", "ai_ecdict.dict.yaml")
+    return os.path.expanduser("~/Library/Rime/dicts/ai_ecdict.dict.yaml")
 
 
 DICT_HEADER = """# Rime dictionary
@@ -557,7 +557,7 @@ def save_cache(d, cache):
 def default_local_dicts():
     base = (os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "Rime")
             if os.name == "nt" else os.path.expanduser("~/Library/Rime"))
-    return [os.path.join(base, n) for n in ("ecdict.dict.yaml", "ai_ecdict.dict.yaml")]
+    return [os.path.join(base, n) for n in ("dicts/ecdict.dict.yaml", "dicts/chem_ecdict.dict.yaml", "dicts/ai_ecdict.dict.yaml")]
 
 
 def load_local_words(cfg):

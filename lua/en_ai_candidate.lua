@@ -16,10 +16,10 @@ end
 local function default_ai_dict()
   local appdata = os.getenv("APPDATA")
   if appdata then
-    return appdata:gsub("\\", "/") .. "/Rime/ai_ecdict.dict.yaml"
+    return appdata:gsub("\\", "/") .. "/Rime/dicts/ai_ecdict.dict.yaml"
   end
   local home = os.getenv("HOME") or "."
-  return home .. "/Library/Rime/ai_ecdict.dict.yaml"
+  return home .. "/Library/Rime/dicts/ai_ecdict.dict.yaml"
 end
 
 local function cfg_str(cfg, key)

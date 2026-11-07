@@ -26,9 +26,8 @@
 ├── luna_pinyin.custom.yaml          朙月拼音：同上
 ├── english.schema.yaml              英文模式（独立方案，自带 lua 挂载）
 ├── ai_config.json               ★ 大模型配置（多个 AI 档位都写这里，含 key，已 gitignore）
-├── ecdict.dict.yaml             ★ 基础词库：4 万高频词 + 3 万时态变形
-├── chem_ecdict.dict.yaml        ★ 基础词库：1.6 万化学词（由 ecdict 的 import_tables 合并）
-├── ai_ecdict.dict.yaml          ★ AI 补录词库（唯一可删的，Ctrl+Delete 只动它）
+├── en.dict.yaml                 英文词库入口（只有 import_tables，正文在 dicts/ 里）
+├── vhuuyt.dict.yaml             中文词库入口（同上）
 ├── lua/                         输入法内部逻辑，全是 Lua（rime 自带，无依赖）
 │   ├── typst_shortcuts.lua      三方案：Ctrl+. / Ctrl+Shift+, / Ctrl+Shift+G
 │   ├── typst_dict.lua           三方案：输入 typ 出片段候选
@@ -86,16 +85,16 @@
 
 | 文件 | 内容 | 能删吗 | 何时重建 |
 |---|---|---|---|
-| `ecdict.dict.yaml` | 4 万高频词 + 3 万变形（`ran`/`bigger`/`titrated`） | 不能 | 改 `--limit` 重新生成 |
-| `chem_ecdict.dict.yaml` | 1.6 万 `[化]` 词条 + 实验常用词（`titrate`/`esterify`/`spectrophotometry`） | 不能 | 同上（一条命令一起生成） |
-| `vhuuyt.dict.yaml` + `dicts/` | **中文词库**（双拼用）：搜狗词库、THUOCL、语料词表、符号、多音字 | 不能 | 换词库时手工替换 `dicts/` |
-| `ai_ecdict.dict.yaml` | AI 查过的词，含大写版本 | **能**（`Ctrl+Delete`） | 桥自动写入 |
+| `en.dict.yaml` → `dicts/ecdict.dict.yaml` | 4 万高频词 + 3 万变形（`ran`/`bigger`/`titrated`） | 不能 | 改 `--limit` 重新生成 |
+| `en.dict.yaml` → `dicts/chem_ecdict.dict.yaml` | 1.6 万 `[化]` 词条 + 实验常用词 | 不能 | 同上（一条命令一起生成） |
+| `vhuuyt.dict.yaml` → `dicts/sogouw` 等 | **中文词库**（双拼用）：搜狗、THUOCL、语料、符号、多音字 | 不能 | 换词库时替换 `dicts/` 里的文件 |
+| `dicts/ai_ecdict.dict.yaml` | AI 查过的词，含大写版本 | **能**（`Ctrl+Delete`） | 桥自动写入 |
 
 重新生成前两个英文库（中文库不用重新生成）：
 
 ```powershell
 python scripts\ecdict2dict.py --csv C:\path\to\ecdict.csv `
-    --out ecdict.dict.yaml --chem-out chem_ecdict.dict.yaml --limit 40000
+    --out dicts\ecdict.dict.yaml --chem-out dicts\chem_ecdict.dict.yaml --limit 40000
 ```
 
 （`ecdict.csv` 来自 <https://github.com/skywind3000/ECDICT>，约 66MB。桥看到 `*.dict.yaml` 变了会自动重新部署。）
@@ -157,8 +156,8 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 | 想做的事 | 怎么做 |
 |---|---|
 | 加 Typst 片段 | 改 `lua/typst_dict.lua` 里的 `builtin_entries`（key 只能用字母） |
-| 给 AI 补过的词加中文释义进词库 | 已经自动写进 `ai_ecdict.dict.yaml`，不用管 |
-| 删掉一个不想要的 AI 词 | 英文模式选中它 → `Ctrl+Delete`，或直接编辑 `ai_ecdict.dict.yaml`（别删 `#v` 行） |
+| 给 AI 补过的词加中文释义进词库 | 已经自动写进 `dicts/ai_ecdict.dict.yaml`，不用管 |
+| 删掉一个不想要的 AI 词 | 英文模式选中它 → `Ctrl+Delete`，或直接编辑 `dicts/ai_ecdict.dict.yaml`（别删 `#v` 行） |
 | 查某个词在不在库里 | `python scripts\lookup.py typst titration ran` |
 | 加一个 AI | 只改 `ai_config.json` 的 `profiles` |
 | 改完配置要手动部署吗 | 不用，桥 3 秒内自己动手；只有桥没跑时才需要托盘「重新部署」 |

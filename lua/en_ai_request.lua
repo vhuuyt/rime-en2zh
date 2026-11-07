@@ -54,8 +54,8 @@ function M.init(env)
   env.ai_dict = cfg_str(cfg, "en_ai/ai_dict")
   if not env.ai_dict then
     local appdata = os.getenv("APPDATA")
-    env.ai_dict = appdata and (appdata:gsub("\\", "/") .. "/Rime/ai_ecdict.dict.yaml")
-                     or ((os.getenv("HOME") or ".") .. "/Library/Rime/ai_ecdict.dict.yaml")
+    env.ai_dict = appdata and (appdata:gsub("\\", "/") .. "/Rime/dicts/ai_ecdict.dict.yaml")
+                     or ((os.getenv("HOME") or ".") .. "/Library/Rime/dicts/ai_ecdict.dict.yaml")
   end
 
   env.last_input = ""

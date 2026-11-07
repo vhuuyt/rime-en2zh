@@ -1,0 +1,13 @@
+# 英文词库入口（只是 import_tables，正文都在 dicts/ 里）
+#   dicts/ecdict.dict.yaml       4 万高频词 + 3 万时态变形
+#   dicts/chem_ecdict.dict.yaml  1.6 万化学词
+# 重新生成见 scripts/ecdict2dict.py
+---
+name: en
+version: "0.1"
+sort: by_weight
+use_preset_vocabulary: false
+import_tables:
+  - dicts/ecdict
+  - dicts/chem_ecdict
+...

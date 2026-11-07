@@ -5,9 +5,9 @@
 | 文件 | 作用 |
 |---|---|
 | `english.schema.yaml` | 独立方案：`speller/alphabet` 只有 a–z、`'`、`-`，**没有双拼 algebra**，所以英文码不会被中文方案改写 |
-| `ecdict.dict.yaml` | **基础词库 1/2**：4 万高频词 + 时态/复数/比较级变形，由 `scripts/ecdict2dict.py` 从 ECDICT 生成 |
-| `chem_ecdict.dict.yaml` | **基础词库 2/2 · 化学**：ECDICT 里 1.6 万条 `[化]` 词条 + 一批实验常用词（`titrate`/`esterify`…），通过 `ecdict.dict.yaml` 的 `import_tables` 合并进来 |
-| `ai_ecdict.dict.yaml` | AI 补录（**唯一可删的**：`Ctrl+Delete` 只动它） |
+| `dicts/ecdict.dict.yaml` | **基础词库 1/2**：4 万高频词 + 时态/复数/比较级变形，由 `scripts/ecdict2dict.py` 从 ECDICT 生成 |
+| `dicts/chem_ecdict.dict.yaml` | **基础词库 2/2 · 化学**：ECDICT 里 1.6 万条 `[化]` 词条 + 一批实验常用词（`titrate`/`esterify`…），通过 `ecdict.dict.yaml` 的 `import_tables` 合并进来 |
+| `dicts/ai_ecdict.dict.yaml` | AI 补录（**唯一可删的**：`Ctrl+Delete` 只动它） |
 | `lua/en_ai_request.lua` | processor：每次输入变化把单词写进 `request.txt`；收到 `F24` 时重绘候选 |
 | `lua/en_ai_candidate.lua` | translator：读 `response.txt`，命中就补一条 `[AI]` 候选（带缓存） |
 | `scripts/ecdict2dict.py` | ECDICT csv → 词库 |
@@ -72,14 +72,14 @@ AI 补录过的词也会被桥当成"本地已有"，不再花钱问 API。
 
 | 词库 | 内容 | 能不能删 |
 |---|---|---|
-| `ecdict.dict.yaml` | 4 万高频词 + 变形（`ran`/`bigger`/`titrated`…） | 不能（重新生成即可） |
-| `chem_ecdict.dict.yaml` | 化学专用：1.6 万条 `[化]` 词条 + 实验常用词 | 不能（同上） |
-| `ai_ecdict.dict.yaml` | AI 补录 | **能**，`Ctrl+Delete` 只删这个 |
+| `dicts/ecdict.dict.yaml` | 4 万高频词 + 变形（`ran`/`bigger`/`titrated`…） | 不能（重新生成即可） |
+| `dicts/chem_ecdict.dict.yaml` | 化学专用：1.6 万条 `[化]` 词条 + 实验常用词 | 不能（同上） |
+| `dicts/ai_ecdict.dict.yaml` | AI 补录 | **能**，`Ctrl+Delete` 只删这个 |
 
 重新生成（会同时更新化学词库、时态变形）：
 
 ```powershell
-python scripts\ecdict2dict.py --csv ...\ecdict.csv --out ecdict.dict.yaml --chem-out chem_ecdict.dict.yaml --limit 40000
+python scripts\ecdict2dict.py --csv ...\ecdict.csv --out dicts\ecdict.dict.yaml --chem-out dicts\chem_ecdict.dict.yaml --limit 40000
 ```
 
 桥看到 `*.dict.yaml` 变了会自动重新部署（`ai_ecdict.dict.yaml` 除外，那个是桥自己写的）。

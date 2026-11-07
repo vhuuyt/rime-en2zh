@@ -163,8 +163,8 @@ end
 function M.init(env)
   local cfg = env.engine.schema.config
   env.dir = cfg_str(cfg, "en_ai/dir") or default_dir()
-  env.base_path = cfg_str(cfg, "en_ai/base_dict") or (rime_dir() .. "/ecdict.dict.yaml")
-  env.ai_path = cfg_str(cfg, "en_ai/ai_dict") or (rime_dir() .. "/ai_ecdict.dict.yaml")
+  env.base_path = cfg_str(cfg, "en_ai/base_dict") or (rime_dir() .. "/dicts/ecdict.dict.yaml")
+  env.ai_path = cfg_str(cfg, "en_ai/ai_dict") or (rime_dir() .. "/dicts/ai_ecdict.dict.yaml")
   env.width = tonumber(cfg_str(cfg, "en_ai/width") or "") or 20
   env.step = tonumber(cfg_str(cfg, "en_ai/step") or "") or 2
   env.marquee = (cfg_str(cfg, "en_ai/marquee") or "1") ~= "0"

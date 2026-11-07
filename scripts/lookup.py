@@ -17,7 +17,7 @@ def dict_paths():
         root = (os.path.join(os.environ.get("APPDATA", ""), "Rime") if os.name == "nt"
                 else os.path.expanduser("~/Library/Rime"))
     return [os.path.join(root, n) for n in
-            ("ecdict.dict.yaml", "chem_ecdict.dict.yaml", "ai_ecdict.dict.yaml")]
+            ("dicts/ecdict.dict.yaml", "dicts/chem_ecdict.dict.yaml", "dicts/ai_ecdict.dict.yaml")]
 
 
 def load(path):
