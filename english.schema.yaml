@@ -1,0 +1,107 @@
+# Rime schema
+# encoding: utf-8
+#
+# 英文模式（独立方案）
+#   - 本地：ecdict.dict.yaml（由 scripts/ecdict2dict.py 从 ECDICT 生成）
+#         候选顺序 = 英文原词 → 本地释义
+#   - 远端：停手 delay_ms 毫秒后，scripts/ai_bridge.py 调你的自定义 API，
+#         结果以 [AI] 候选补上（见 en_ai 段与脚本内 config.json）
+#
+# 切换：F4（或 Ctrl+Shift+E / Ctrl+`）选「英文模式」
+
+schema:
+  schema_id: english
+  name: 英文模式
+  version: "0.1"
+  description: |
+    打英文单词：本地 ECDICT 词库即时给释义，停手后可由大模型补一条翻译。
+
+switches:
+  - name: ascii_mode      # 不显示在菜单里；只用于 Shift 直通（ascii_composer 需要它）
+    reset: 0
+  - name: ascii_punct   # 不显示在菜单里，固定用 ASCII 标点
+    reset: 1
+  - name: ai_translate
+    reset: 1
+    states: [ AI关, AI开 ]
+  # >>> ai_profile auto
+  - name: ai_profile
+    options: [ "ai_minimax", "ai_openai", "ai_deepseek" ]
+    states: [ "AI: minimax", "AI: openai", "AI: deepseek" ]
+    reset: 0
+  # <<< ai_profile auto
+
+engine:
+  processors:
+    - lua_processor@*en_ai_request
+    - lua_processor@*typst_shortcuts   # Ctrl+. / Ctrl+Shift+, / Ctrl+Shift+G
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - lua_translator@*typst_dict       # typ → Typst 片段候选
+    - lua_translator@*en_ai_candidate
+    - table_translator                 # ecdict + packs(ai_ecdict)
+    - punct_translator
+  filters:
+    - lua_filter@*en_assoc            # 联想模式：释义进 comment、丢掉释义行
+    - uniquifier
+
+speller:
+  # 大写也放进字母表，AI 补录 cap=1 的词条（Typst / Rime / Linux…）才能打出来
+  alphabet: "zyxwvutsrqponmlkjihgfedcbaABCDEFGHIJKLMNOPQRSTUVWXYZ'-"
+  delimiter: " "
+
+translator:
+  dictionary: ecdict
+  enable_completion: true    # 打 comp 也能补出 computer（注释里显示 ~uter）
+  enable_sentence: false
+  enable_user_dict: false    # 查词不需要学习
+  initial_quality: 0
+
+punctuator:
+  import_preset: default
+
+recognizer:
+  import_preset: default
+
+key_binder:
+  import_preset: default
+  bindings:
+    - { when: always, accept: "Control+Shift+A", toggle: ai_translate }
+
+# ---- Typst 片段词典（与中文方案共用同一份 lua/typst_dict.lua）----
+typst_dict:
+  trigger: typ
+
+# ---- 大模型翻译（由 lua/en_ai_request.lua + scripts/ai_bridge.py 使用）----
+en_ai:
+  dir: ""              # 空 = 系统临时目录/rime_en_ai；桥接脚本与这里必须一致
+  delay_ms: 900        # 停手多久才发请求（桥接脚本读这个值，改这里即可）
+  trigger: ""          # 可选：想用某个键立刻请求，填 repr，如 "Control+Return"
+  marker: "[AI]"       # AI 候选的注释文字
+  # >>> ai_names auto
+  profiles: "minimax,openai,deepseek"
+  # <<< ai_names auto
+  marquee: 1           # 联想模式下长释义按窗口滚动显示（0 = 整段直接显示）
+  marquee_auto: 0      # 1 = 桥注入 F24 自动滚；0 = 按 Tab 手动滚（默认）
+  tab: Tab             # 滚动键
+  commit_key: Control+Return   # 把高亮候选的释义上屏
+  delete_key: Control+Delete   # 删掉 AI 补录的词（基库 ECDICT 的词不受影响）
+  delete_key_alt: Control+BackSpace   # macOS 主键盘的删除键 = Backspace
+  delete_close: 1              # 删完立刻收起候选框（0 = 留在候选里继续选）
+  tab_step: 4          # 每按一次 Tab 前进几个字符
+  width: 12            # 滚动窗口宽度（字符数，一个汉字算 1）；释义超过它才滚
+  step: 1              # 每次重绘前进几个字符
+  min_input_len: 2     # 太短的词不查

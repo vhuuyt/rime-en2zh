@@ -1,0 +1,15 @@
+---
+name: vhuuyt
+version: "2023.05.02"
+sort: vhuuyt
+use_preset_vocabulary: true
+import_tables:
+  - luna_pinyin
+  - dicts/symbols
+  - dicts/sogou_chem
+  - dicts/thuocl
+  - dicts/sogouw
+  - dicts/corpuscharacterlist
+  - dicts/corpuswordlist
+  - dicts/polyphones
+...

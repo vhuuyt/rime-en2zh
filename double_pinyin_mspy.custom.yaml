@@ -1,0 +1,46 @@
+# 双拼 MSPY · 跨端共享补丁
+# ---------------------------------------------------------------------------
+# 这个文件在 Windows(Weasel) / macOS(Squirrel) / Linux(ibus-rime) 上完全一致，
+# 只放「三端都需要」的东西。各端专属的设置放 weasel.custom.yaml / squirrel.custom.yaml。
+#
+# 依赖用户目录下的 lua/ 脚本（同步方式见 MULTI-DEVICE.md）：
+#   lua/select_character.lua   以词定字
+#   lua/typst_shortcuts.lua    Ctrl+. / Ctrl+Shift+, / Ctrl+Shift+F
+#   lua/typst_dict.lua         输入 typ 调出 Typst 片段
+patch:
+  # ---- 输入引擎：lua 组件必须排在最前 ----
+  # 整表重写，顺序显式可读；其余项与 double_pinyin_mspy.schema.yaml 保持一致
+  engine/processors:
+    - lua_processor@*select_character   # 以词定字（要早于 punctuator / key_binder）
+    - lua_processor@*typst_shortcuts    # 快捷片段
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  engine/translators:
+    - lua_translator@*typst_dict        # typ → Typst 片段候选
+    - punct_translator
+    - reverse_lookup_translator
+    - script_translator
+
+  # ---- 以词定字：默认 [ 取首字、] 取末字（键名三端一致） ----
+  # 想换键就改这里，例如 minus / equal / comma / period
+  key_binder/select_first_character: bracketleft
+  key_binder/select_last_character: bracketright
+
+  # ---- Typst 片段词典的触发词 ----
+  typst_dict/trigger: typ
+
+  # ---- 标点 ----
+  punctuator/full_shape:
+    "/": "、"
+  punctuator/half_shape:
+    "/": "、"
+    "]": "]"
+
+  # ---- 词库 ----
+  translator/dictionary: vhuuyt

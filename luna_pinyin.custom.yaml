@@ -1,0 +1,32 @@
+# 朙月拼音（luna_pinyin）· 共享 lua 组件挂载
+# 让双拼里那套 Typst 工具在朙月拼音下同样可用。
+#   输入 typ        → Typst 片段候选（lua/typst_dict.lua）
+#   Ctrl+.          → #super[
+#   Ctrl+Shift+,    → #sub[
+#   Ctrl+Shift+G    → #figure(image(""), caption: [])
+#   [ / ]           → 以词定字（取首字 / 末字）
+patch:
+  # 整表重写：lua 处理器要在 punctuator / key_binder 之前
+  engine/processors:
+    - lua_processor@*select_character   # 以词定字
+    - lua_processor@*typst_shortcuts    # 快捷片段
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+
+  # 注意保留原方案的 table_translator@custom_phrase
+  engine/translators:
+    - lua_translator@*typst_dict        # typ → Typst 片段候选
+    - punct_translator
+    - table_translator@custom_phrase
+    - reverse_lookup_translator
+    - script_translator
+
+  key_binder/select_first_character: bracketleft
+  key_binder/select_last_character: bracketright
+  typst_dict/trigger: typ

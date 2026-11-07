@@ -1,0 +1,15 @@
+customization:
+  distribution_code_name: Weasel
+  distribution_version: 0.17.4
+  generator: "Rime::SwitcherSettings"
+  modified_time: "Thu Sep  3 11:15:58 2026"
+  rime_version: 1.13.1
+patch:
+  "menu/page_size": 9
+  # 打开方案选单的备用热键（F4 在有些应用里被占用）
+  "switcher/hotkeys/+":
+    - Control+Shift+E
+  schema_list:
+    - {schema: double_pinyin_mspy}
+    - {schema: luna_pinyin}
+    - {schema: english}

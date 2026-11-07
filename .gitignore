@@ -1,0 +1,45 @@
+# Rime 用户目录：只跟踪「配置源码」，不跟踪编译产物和机器状态
+#
+#   git init && git add -A && git commit -m "rime config"
+#
+# 同步分工：
+#   本仓库(git)  → 方案 / 补丁 / lua / 词库源码
+#   Rime 同步    → *.userdb（学习记录，各端各自合并）
+
+# ---- 编译产物：每端自己跑「重新部署」生成，跨端同步会坏事 ----
+build/
+*.bin
+*.kct
+*.reverse.kct
+
+# ---- 用户词典 / 学习记录：交给 Rime 自己的「同步」 ----
+*.userdb/
+*.userdb.old-*/
+*.userdb.txt
+*.userdb.txt.bak-*
+sync/
+trash/
+
+# ---- 机器专属状态 ----
+# 含 installation_id 与 sync_dir，各端路径不同
+installation.yaml
+# last_build_time / 上次选的方案，噪声
+user.yaml
+
+# ---- 临时文件 ----
+*.log
+*.bak
+*.bak-*
+*.tmp
+
+# ---- dicts/ 是双拼的中文词库（vhuuyt.dict.yaml 引用它），必须跟踪，别忽略 ----
+
+# ---- 英文查词：API 配置不要进仓库 ----
+scripts/config.json
+*.userdb.txt
+
+# ---- 输入法侧的 AI 配置（含 API key）----
+ai_config.json
+
+# Python 缓存
+__pycache__/
