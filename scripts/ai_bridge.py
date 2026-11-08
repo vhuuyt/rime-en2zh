@@ -506,7 +506,12 @@ def read_ai_dict(path):
 
 
 def write_ai_dict(path, words):
-    """words: {word: {"meaning","cap"}} → 整份重写（带 #v<ts> 版本标记，lua 靠它重读）。"""
+    """words: {word: {"meaning"}} → 整份重写（带 #v<ts> 版本标记，lua 靠它重读）。
+
+    词一律存小写：这个词库不进 prism（en.dict.yaml 没 import 它），只是 filter 的
+    数据源；filter 补候选时用的是**用户敲的原文**，查释义时先按原文、再按小写回退。
+    所以存小写既能命中 LaTeX / Latex / latex，也不用为大小写各存一份。
+    """
     lines = []
     for w in sorted(words):
         e = words[w]
@@ -514,12 +519,6 @@ def write_ai_dict(path, words):
         lines.append("%s\t%s\t10" % (w, w))
         if meaning and meaning != w:
             lines.append("%s%s\t%s\t0" % (MEANING_MARK, meaning, w))
-        if e.get("cap"):
-            cap = w[:1].upper() + w[1:]
-            if cap != w:
-                lines.append("%s\t%s\t10" % (cap, cap))
-                if meaning:
-                    lines.append("%s%s\t%s\t0" % (MEANING_MARK, meaning, cap))
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         f.write(DICT_HEADER % int(time.time()))
@@ -535,7 +534,7 @@ def save_word(ai_path, word, entry):
     meaning = ((entry.get("pos", "") + " " + entry["zh"]).strip()
                if entry.get("pos") else entry["zh"])
     meaning = short_zh(meaning)
-    words[word] = {"meaning": meaning, "cap": bool(entry.get("cap"))}
+    words[word.lower()] = {"meaning": meaning}
     try:
         os.makedirs(os.path.dirname(ai_path) or ".", exist_ok=True)
         write_ai_dict(ai_path, words)
@@ -998,7 +997,8 @@ def selftest():
         assert got["hello"]["meaning"] == "int. 喂"
         body = open(target, encoding="utf-8").read()
         assert "#v" in body and "name: ai_ecdict" in body
-        assert body.count("n. 排版系统v2") == 2, body   # typst + Typst 各一条
+        assert body.count("n. 排版系统v2") == 1, body   # 只存小写一份
+        assert "Typst\tTypst" not in body, body          # 不再写大小写变体
 
     assert parse_result('{"zh":"喂","pos":"int.","cap":false}') == {"zh": "喂", "pos": "int.", "cap": False}
     assert parse_result('```json\n{"zh":"树","pos":"n."}\n```')["zh"] == "树"

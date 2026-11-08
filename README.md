@@ -152,7 +152,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 |---|---|---|---|
 | `dicts/ecdict.dict.yaml` | 7.4 万编码 / 14.8 万行（4 万词 + 3 万变形），5.7MB | 不能 | 想换规模/释义时重新生成 |
 | `dicts/chem_ecdict.dict.yaml` | 1.5 万编码 / 3 万行，1.0MB | 不能 | 同上（一条命令一起生成） |
-| `dicts/ai_ecdict.dict.yaml` | AI 查过的词 | **能**（`Ctrl+Delete`） | 桥自动写入（带 `#v` 版本号） |
+| `dicts/ai_ecdict.dict.yaml` | AI 查过的词（**一律存小写**，打 `LaTeX`/`Latex`/`latex` 都能命中） | **能**（`Ctrl+Delete`） | 桥自动写入（带 `#v` 版本号） |
 | `dicts/sogouw` 等 | **中文词库**（双拼用）：搜狗、THUOCL、语料、符号、多音字 | 不能 | 换词库时替换文件 |
 
 重新生成英文库（中文库不用动）：
