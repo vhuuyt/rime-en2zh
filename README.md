@@ -150,8 +150,8 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 
 | 文件 | 内容 | 能删吗 | 何时重建 |
 |---|---|---|---|
-| `dicts/ecdict.dict.yaml` | 14.5 万编码 / 22.8 万行（4 万词 + 3 万变形 + 4.4 万大小写变体），8.3MB | 不能 | 想换规模/释义时重新生成 |
-| `dicts/chem_ecdict.dict.yaml` | 3 万编码 / 5.9 万行，1.9MB | 不能 | 同上（一条命令一起生成） |
+| `dicts/ecdict.dict.yaml` | 7.4 万编码 / 14.8 万行（4 万词 + 3 万变形），5.7MB | 不能 | 想换规模/释义时重新生成 |
+| `dicts/chem_ecdict.dict.yaml` | 1.5 万编码 / 3 万行，1.0MB | 不能 | 同上（一条命令一起生成） |
 | `dicts/ai_ecdict.dict.yaml` | AI 查过的词 | **能**（`Ctrl+Delete`） | 桥自动写入（带 `#v` 版本号） |
 | `dicts/sogouw` 等 | **中文词库**（双拼用）：搜狗、THUOCL、语料、符号、多音字 | 不能 | 换词库时替换文件 |
 
@@ -163,15 +163,7 @@ python scripts\ecdict2dict.py --csv C:\path\to\ecdict.csv `
 ```
 
 `ecdict.csv` 来自 <https://github.com/skywind3000/ECDICT>（约 66MB）。生成完桥会自动重新部署。
-没有 csv 时也可以只给现有词库补大小写变体（幂等，重复跑无副作用）：
-
-```powershell
-python scripts\ecdict2dict.py --case-variants dicts\ecdict.dict.yaml dicts\chem_ecdict.dict.yaml
-```
-
-不想让词库变大（约减半）：生成时加 `--no-case-variants`。
-
-整理词库（每编码只留一条释义 + 加标记 + 剪掉"变形的大写变体"，幂等）：
+没有 csv 时也能整理已有词库（每编码只留一条释义 + 加释义标记 + 剪掉大写变体，幂等）：
 
 ```powershell
 python scripts\ecdict2dict.py --compact dicts\ecdict.dict.yaml dicts\chem_ecdict.dict.yaml
@@ -276,6 +268,17 @@ python scripts/ai_bridge.py --selftest
 
 **为什么 AI 要按 Tab 才触发**：早期是"停手 900ms 自动查"，那要求每次按键都写一次请求文件（同步 I/O，~0.3ms/键，还会被磁盘/杀毒拖慢）。现在打字完全不碰磁盘，只有 Tab 这一下写一次。
 
-**大小写**：Rime 的码表查询精确匹配（`prism->GetValue`），所以 `ecdict2dict.py` 在生成时给每个小写词复制一份「首字母大写」变体（短词再加一份全大写，如 `API`/`PDF`）。打 `Hello` 和 `hello` 都有本地释义。代价只在体积（词库 6M → 10M），运行时零成本：查表是按编码精确取，候选多少条不影响按键。
+**大小写**：Rime 的码表查询是精确匹配（`prism->GetValue`），词库里只有 `hello` 时打 `Hello` 一条候选都没有。
+解法不是复制词条，而是在 `english.schema.yaml` 里用拼写运算派生：
+
+```yaml
+speller:
+  algebra:
+    - derive/^(.)(.*)$/\u$1$2/     # hello → Hello，指向同一条词条
+```
+
+编译建 prism 时对每个码派生一个首字母大写码（`dict_compiler.cc` 读 schema 的 `speller/algebra`），
+所以**词库里一份小写就够**，`en.table.bin` 不会因为大写而翻倍。代价：全大写（`HELLO`）不可查；
+候选正文是小写，上屏时由 `lua/en_space.lua` 按你敲的输入补回大写。
 
 **更多细节**：`docs/ENGLISH-LOOKUP.md`（数据流、键位、AI 链路、排错）、`docs/MULTI-DEVICE.md`（配置走 git，`*.userdb` 走 Rime 同步，`build/` 和 `ai_config.json` 不进仓库）。

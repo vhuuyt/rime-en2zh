@@ -3,6 +3,9 @@
 -- 选词上屏时自动补一个尾随空格：打 hello 按空格 → 上屏 "hello "，
 -- 接着打下一个词不会粘成 "helloworld"，不用再补一次空格。
 --
+-- 顺带处理首字母大写：词库里只存小写（大小写靠 schema 的 speller/algebra 派生），
+-- 所以打 Hello 时候选正文是 hello。用户敲的是大写，上屏也该是大写，这里补回来。
+--
 -- 为什么不用 filter 改 cand.text：librime-lua 的 CandidateSet::set_text 只对
 -- SimpleCandidate 生效（`if (auto p = dynamic_cast<SimpleCandidate *>(&c))`），
 -- 而词库候选是 Phrase，赋值会被静默忽略。所以这里在**提交那一刻**处理：
@@ -47,10 +50,15 @@ function M.func(key, env)
 
   -- 高亮候选优先；连候选都没有（生僻词）时退回原始输入
   local cand = ctx:get_selected_candidate()
-  local text = (cand and cand.text) or ctx.input or ""
+  local typed = ctx.input or ""
+  local text = (cand and cand.text) or typed
   text = text:gsub("%s+$", "")              -- 幂等：已有尾随空格不再加
   if text == "" or not text:match(WORD_RE) then
     return 2                                 -- 中文释义 / 标点 / 片段：照旧走 Rime 自己
+  end
+  -- 输入是大写开头、候选是小写正文 → 上屏也大写（词库只有小写那份）
+  if typed:match("^%u") and text:match("^%l") then
+    text = text:sub(1, 1):upper() .. text:sub(2)
   end
 
   env.engine:commit_text(text .. " ")

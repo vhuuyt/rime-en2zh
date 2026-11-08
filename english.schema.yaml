@@ -68,9 +68,13 @@ engine:
     - uniquifier
 
 speller:
-  # 大写放进字母表：词库里的大小写变体（Hello / API）和 AI 补录的首字母大写词才能打出来
+  # 大写放进字母表：词库只存小写，首字母大写的说法靠下面的 algebra 派生
   alphabet: "zyxwvutsrqponmlkjihgfedcbaABCDEFGHIJKLMNOPQRSTUVWXYZ'-"
   delimiter: " "
+  # 拼写运算：编译期给每个小写码派生一个「首字母大写」的码，指向同一个词条
+  # （不复制词条正文；dict_compiler.cc 建 prism 时会读这里的 algebra）
+  algebra:
+    - derive/^(.)(.*)$/\u$1$2/
 
 translator:
   dictionary: en          # en.dict.yaml 只是 import_tables（dicts/ecdict + dicts/chem_ecdict）

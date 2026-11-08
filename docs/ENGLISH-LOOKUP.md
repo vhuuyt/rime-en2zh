@@ -111,20 +111,27 @@ python scripts\ecdict2dict.py --csv C:\path\to\ecdict.csv `
 * 文件头写 `#v<时间戳>`，桥和 lua 都靠它判断"要不要重读"
 
 **大小写**：Rime 的码表查询是精确匹配（`Dictionary::LookupWords` → `prism_->GetValue`），
-词库里只有 `hello` 时打 `Hello` 一条候选都没有。所以生成时会**复制一份首字母大写变体**
-（短词再加一份全大写）：
+词库里只有 `hello` 时打 `Hello` 一条候选都没有。这里**不复制词条**，而是用拼写运算派生：
 
-```
-hello    hello    10
-interj. 喂；嘿    hello    0
-Hello    Hello    10        <- 变体：单词行 + 同样的释义行
-interj. 喂；嘿    Hello    0
+```yaml
+# english.schema.yaml
+speller:
+  alphabet: "…ABCDEFGHIJKLMNOPQRSTUVWXYZ'-"   # 大写必须是合法按键
+  algebra:
+    - derive/^(.)(.*)$/\u$1$2/               # hello → Hello（派生码，指向同一条词条）
 ```
 
-`python scripts/ecdict2dict.py --case-variants dicts/*.dict.yaml` 可以给现成词库补变体（幂等）；
-生成时加 `--no-case-variants` 就不要变体；`--compact` 会顺手剪掉"变形的大写变体"（`Titrated`
-这种权重 5 的，句子开头用不到）。代价是词库和 build 产物约翻倍（deploy 多 2 秒），
-运行时零成本 —— 查表是按编码精确取，`kInitialSearchLimit = 10` 也限制了补全最多展开 10 条。
+`DictCompiler::BuildPrism` 会在建 prism 时读 schema 的 `speller/algebra`（`dict_compiler.cc:310`），
+`derive` 用 `boost::regex_replace`（`calculus.cc:127`），replacement 里的 `\u` 是 boost 的大小写转义，
+所以派生出来的码和原码指向**同一个 syllable id**：`en.table.bin` 里词条只有一份。
+
+代价与副作用：
+
+* 全大写（`HELLO`）没有规则，查不到 —— 写句子用不到，不处理
+* 派生码让 prism 变大（7.4 万码 → 约 15 万键，`en.prism.bin` 2.2M → 6.4M），表反而小了
+  （`en.table.bin` 6.0M → 4.2M），查词速度不变
+* 候选正文是小写（库里的那份），上屏时 `lua/en_space.lua` 按输入首字母补回大写：
+  敲 `Hello` + 空格 → 上屏 `Hello `
 
 ---
 
