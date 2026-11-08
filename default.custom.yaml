@@ -9,8 +9,11 @@ patch:
   # 打开方案选单的备用热键（F4 在有些应用里被占用）
   "switcher/hotkeys/+":
     - Control+Shift+E
-  # F4 里切换过的开关存进 user.yaml，重启输入法仍然生效
-  switcher/save_options:
+  # F4 里切换过的开关存进 user.yaml，重启输入法仍然生效。
+  # 注意必须用 /+ 追加：直接写 switcher/save_options 会**整表替换**掉
+  # default.yaml 里的 full_shape/ascii_punct/simplification/extended_charset/
+  # zh_* —— 简体设置（simplification）就存不住了，中文会变繁体。
+  switcher/save_options/+:
     - no_auto_space
   schema_list:
     - {schema: double_pinyin_mspy}

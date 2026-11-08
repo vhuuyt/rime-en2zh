@@ -8,11 +8,9 @@ patch:
   "style/color_scheme": ink
   "style/horizontal": false
   "style/layout/min_width": 72
-  "app_options/oleafly.exe/ascii_mode": true
   "app_options/oleafly.exe/vim_mode": true
-  "app_options/texpile.exe/ascii_mode": true
   "app_options/texpile.exe/vim_mode": true
+  # 只有终端里默认直通英文（其余应用只保留 vim_mode，不再强制西文）
   "app_options/windowsterminal.exe/ascii_mode": true
   "app_options/windowsterminal.exe/vim_mode": true
-  "app_options/zed.exe/ascii_mode": true
   "app_options/zed.exe/vim_mode": true

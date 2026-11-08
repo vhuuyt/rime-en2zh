@@ -115,6 +115,23 @@ check("no_auto_space 故意不写 reset（写了每次切方案都会重置回�
 local def = read("default.custom.yaml")
 check("default.custom.yaml 把 no_auto_space 加进 switcher/save_options",
       def ~= nil and def:find("save_options") ~= nil and def:find("no_auto_space") ~= nil)
+-- 必须用 /+ 追加：整表替换会冲掉 default.yaml 里的
+-- full_shape / ascii_punct / simplification / extended_charset / zh_* ，
+-- 简体设置存不住 → 中文变繁体
+check("save_options 用的是 /+ 追加（不是整表替换）",
+      def ~= nil and def:find("switcher/save_options/+:", 1, true) ~= nil
+        and def:find("switcher/save_options:", 1, true) == nil)
+
+-- weasel.custom.yaml：只有终端强制西文，别的应用不该被 ascii_mode 绑住
+local weasel = read("weasel.custom.yaml")
+if weasel then
+  local ascii_apps = {}
+  for exe in weasel:gmatch("app_options/([%w_%.%-]+)/ascii_mode") do
+    ascii_apps[#ascii_apps + 1] = exe
+  end
+  check("只有 windowsterminal 保留 ascii_mode", #ascii_apps == 1 and ascii_apps[1] == "windowsterminal.exe",
+        table.concat(ascii_apps, ","))
+end
 check("english ai_translate 开关仍在菜单", has_states(en, "ai_translate"))
 check("english ascii_punct 不显示在菜单（无 states）", not has_states(en, "ascii_punct"))
 
