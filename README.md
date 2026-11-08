@@ -3,7 +3,7 @@
 给 [Rime](https://rime.im/) 的一套双语方案。**在中文输入里顺手查英文词**：
 
 * **英文模式**：中文方案里单击 <kbd>Shift</kbd> → 切到英文模式，打字即出候选 —— 英文原词 + 中文释义（释义贴在候选右边，超宽自动滚动）。
-* **本地词库**：ECDICT 4 万高频词 + 3 万时态变形 + 1.5 万化学词条（`titrate`/`esterify`…），离线可用、不花钱、**打字路径零文件 I/O**。
+* **本地词库**：ECDICT 4 万高频词 + 3 万时态变形 + 1.5 万化学词条（`titrate`/`esterify`…），`Hello` 这种首字母大写也查得到。离线可用、不花钱、**打字路径零文件 I/O**。
 * **大模型兜底**：本地查不到的词，按 <kbd>Tab</kbd> 让常驻桥进程问一次 API，结果立刻成为候选，并写回词库（下次直接命中本地）。
 * **附带**：双拼 / 朙月拼音方案、Typst 片段词典、以词定字（写作向彩蛋，不影响主线）。
 
@@ -150,8 +150,8 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 
 | 文件 | 内容 | 能删吗 | 何时重建 |
 |---|---|---|---|
-| `dicts/ecdict.dict.yaml` | 4 万高频词 + 3 万变形（`ran`/`bigger`/`titrated`） | 不能 | 想换规模/释义时重新生成 |
-| `dicts/chem_ecdict.dict.yaml` | 1.5 万 `[化]` 词条 + 实验常用词 | 不能 | 同上（一条命令一起生成） |
+| `dicts/ecdict.dict.yaml` | 4 万高频词 + 3 万变形（`ran`/`bigger`/`titrated`）+ 8.4 万个大小写变体 | 不能 | 想换规模/释义时重新生成 |
+| `dicts/chem_ecdict.dict.yaml` | 1.5 万 `[化]` 词条 + 1.7 万个大小写变体 | 不能 | 同上（一条命令一起生成） |
 | `dicts/ai_ecdict.dict.yaml` | AI 查过的词 | **能**（`Ctrl+Delete`） | 桥自动写入（带 `#v` 版本号） |
 | `dicts/sogouw` 等 | **中文词库**（双拼用）：搜狗、THUOCL、语料、符号、多音字 | 不能 | 换词库时替换文件 |
 
@@ -163,6 +163,13 @@ python scripts\ecdict2dict.py --csv C:\path\to\ecdict.csv `
 ```
 
 `ecdict.csv` 来自 <https://github.com/skywind3000/ECDICT>（约 66MB）。生成完桥会自动重新部署。
+没有 csv 时也可以只给现有词库补大小写变体（幂等，重复跑无副作用）：
+
+```powershell
+python scripts\ecdict2dict.py --case-variants dicts\ecdict.dict.yaml dicts\chem_ecdict.dict.yaml
+```
+
+不想让词库变大（约减半）：生成时加 `--no-case-variants`。
 
 **词库格式**（一个编码下按权重降序，单词行权重 10、释义行权重 0）：
 
@@ -260,6 +267,6 @@ python scripts/ai_bridge.py --selftest
 
 **为什么 AI 要按 Tab 才触发**：早期是"停手 900ms 自动查"，那要求每次按键都写一次请求文件（同步 I/O，~0.3ms/键，还会被磁盘/杀毒拖慢）。现在打字完全不碰磁盘，只有 Tab 这一下写一次。
 
-**已知行为（有意保留）**：Rime 查词大小写敏感，词库里只有 `hello`，所以打 `Hello` 只有 AI 兜底、没有本地释义。要改的话在 `ecdict2dict.py` 里生成首字母大写变体（词库体积约翻倍）。
+**大小写**：Rime 的码表查询精确匹配（`prism->GetValue`），所以 `ecdict2dict.py` 在生成时给每个小写词复制一份「首字母大写」变体（短词再加一份全大写，如 `API`/`PDF`）。打 `Hello` 和 `hello` 都有本地释义。代价只在体积（词库 7M → 15M、部署多 2 秒），运行时零成本：查表是按编码精确取，候选多少条不影响按键。
 
 **更多细节**：`docs/ENGLISH-LOOKUP.md`（数据流、键位、AI 链路、排错）、`docs/MULTI-DEVICE.md`（配置走 git，`*.userdb` 走 Rime 同步，`build/` 和 `ai_config.json` 不进仓库）。

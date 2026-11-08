@@ -68,7 +68,7 @@ engine:
     - uniquifier
 
 speller:
-  # 大写也放进字母表，AI 补录 cap=1 的词条（Typst / Rime / Linux…）才能打出来
+  # 大写放进字母表：词库里的大小写变体（Hello / API）和 AI 补录的首字母大写词才能打出来
   alphabet: "zyxwvutsrqponmlkjihgfedcbaABCDEFGHIJKLMNOPQRSTUVWXYZ'-"
   delimiter: " "
 

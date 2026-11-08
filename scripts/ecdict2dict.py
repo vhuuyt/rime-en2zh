@@ -133,10 +133,90 @@ def clean_meanings(translation, limit):
     return parts
 
 
+# ---------------------------------------------------------------- 大小写变体
+# Rime 的码表查询是大小写敏感的（Dictionary::LookupWords -> prism->GetValue 精确匹配），
+# 词库里只有 hello 时打 Hello 一条候选都没有。这里给每个小写词复制一份「首字母大写」
+# 变体（外加短词的全大写变体），行结构和原词完全一样：单词行 + 跟随其后的释义行。
+#
+# 代价只在词库体积和部署时间上，运行时零成本（prism 精确查表，多几万条不影响按键）。
+CASE_TITLE_RE = re.compile(r"^[a-z][A-Za-z'\-]*$")
+
+
+def case_variants(entries, seen_codes, caps_max_len=4):
+    """返回新增条目 [(text, code, weight)]。
+
+    entries: [(text, code, weight)]；同 code 的条目里，text == code 的那条算单词行，
+    其余算释义行（会被一起复制到新 code 下）。
+    """
+    groups = {}
+    for text, code, weight in entries:
+        groups.setdefault(code, []).append((text, weight))
+
+    extra = []
+    for code in list(groups):
+        items = groups[code]
+        words = [(t, w) for t, w in items if t == code]
+        if not words:
+            continue
+        word, w0 = words[0]
+        if not CASE_TITLE_RE.match(word):
+            continue
+
+        variants = [word[0].upper() + word[1:]]
+        # 短词（API / PDF / OK）顺手给全大写：长单词的全大写没人打，不必占体积
+        if caps_max_len and 2 <= len(word) <= caps_max_len and word.isalpha():
+            variants.append(word.upper())
+
+        for v in variants:
+            if v == word or v in seen_codes:
+                continue
+            seen_codes.add(v)
+            extra.append((v, v, w0))
+            for text, weight in items:
+                if text != word:
+                    extra.append((text, v, weight))
+    return extra
+
+
+def post_process_case(paths):
+    """给已经生成好的词库补变体（不需要 ecdict.csv）。重复跑是幂等的。"""
+    for path in paths:
+        with open(path, encoding="utf-8") as f:
+            raw = f.read().splitlines()
+        try:
+            end = next(i for i, line in enumerate(raw) if line.strip() == "...")
+        except StopIteration:
+            print(f"{path}: 找不到 yaml 结束标记，跳过", file=sys.stderr)
+            continue
+        entries = []
+        for line in raw[end + 1:]:
+            if not line.strip() or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            weight = int(parts[2]) if len(parts) > 2 and parts[2].strip().isdigit() else 0
+            entries.append((parts[0], parts[1], weight))
+        seen = {code for _, code, _ in entries}
+        extra = case_variants(entries, seen)
+        if not extra:
+            print(f"{path}: 已有变体，未改动", file=sys.stderr)
+            continue
+        with open(path, "a", encoding="utf-8", newline="\n") as f:
+            for text, code, weight in extra:
+                f.write(f"{text}\t{code}\t{weight}\n")
+        print(f"{path}: +{len(extra)} 行（{len(extra) // 2} 个变体，{len(entries)} 条原有）",
+              file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", required=True, help="ECDICT 的 ecdict.csv")
-    ap.add_argument("--out", required=True, help="输出 ecdict.dict.yaml")
+    ap.add_argument("--csv", help="ECDICT 的 ecdict.csv（--case-variants 模式下不需要）")
+    ap.add_argument("--out", help="输出 ecdict.dict.yaml")
+    ap.add_argument("--case-variants", nargs="+", metavar="DICT",
+                    help="只给已有的词库补首字母大写变体（不需要 csv），可给多个文件")
+    ap.add_argument("--no-case-variants", action="store_true",
+                    help="生成时不加大小写变体（词库体积约减半）")
     ap.add_argument("--limit", type=int, default=40000, help="基库收录多少个词（默认 40000）")
     ap.add_argument("--chem-out", help="另外生成化学词库（如 chem_ecdict.dict.yaml）")
     ap.add_argument("--chem-only-tag", default="[化]", help="化学词条的标记")
@@ -144,6 +224,12 @@ def main():
     ap.add_argument("--max-meanings", type=int, default=3, help="每词最多几条释义")
     ap.add_argument("--dict-name", default="ecdict")
     args = ap.parse_args()
+
+    if args.case_variants:
+        post_process_case(args.case_variants)
+        return
+    if not args.csv or not args.out:
+        ap.error("生成词库需要 --csv 和 --out（或用 --case-variants 给已有词库补变体）")
 
     extra = {w for w in EXTRA_WORDS if WORD_RE.match(w)}
     cands, forced = [], []
@@ -273,6 +359,10 @@ def main():
                 out.write(f"{form}\t{form}\t5\n")
                 out.write(f"{hint}\t{form}\t0\n")
         print(f"chem words={len(chem_words)} -> {args.chem_out}", file=sys.stderr)
+
+    # 大小写变体：直接复用后处理（同一份实现，重复跑幂等）
+    if not args.no_case_variants:
+        post_process_case([args.out] + ([args.chem_out] if args.chem_out else []))
 
     total = 1 + sum(1 for w, ms in lines.items() for m in ms if m != w)
     lens = [len(ms[0]) for ms in lines.values() if ms]

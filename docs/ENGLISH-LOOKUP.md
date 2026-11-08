@@ -108,8 +108,19 @@ python scripts\ecdict2dict.py --csv C:\path\to\ecdict.csv `
 * 文件头写 `#v<时间戳>`，桥和 lua 都靠它判断"要不要重读"
 
 **大小写**：Rime 的码表查询是精确匹配（`Dictionary::LookupWords` → `prism_->GetValue`），
-词库里只有 `hello`，所以打 `Hello` 没有本地释义（会走 AI 兜底）。这是当前**有意保留**的行为；
-要改就在 `ecdict2dict.py` 里顺手生成首字母大写变体，代价是词库约翻倍。
+词库里只有 `hello` 时打 `Hello` 一条候选都没有。所以生成时会**复制一份首字母大写变体**
+（短词再加一份全大写）：
+
+```
+hello    hello    10
+interj. 喂；嘿    hello    0
+Hello    Hello    10        <- 变体：单词行 + 同样的释义行
+interj. 喂；嘿    Hello    0
+```
+
+`python scripts/ecdict2dict.py --case-variants dicts/*.dict.yaml` 可以给现成词库补变体（幂等）；
+生成时加 `--no-case-variants` 就不要变体。代价是词库和 build 产物约翻倍（deploy 多 2 秒），
+运行时零成本 —— 查表是按编码精确取，`kInitialSearchLimit = 10` 也限制了补全最多展开 10 条。
 
 ---
 

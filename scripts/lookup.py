@@ -11,8 +11,16 @@ import sys
 
 
 def dict_paths():
-    """基库 ecdict + AI 补录库 ai_ecdict，两个都查。"""
+    """基库 ecdict + 化学库 + AI 补录库，三个都查。
+
+    定位顺序：$RIME_USER_DIR → 本脚本所在目录的上一级（脚本就装在 Rime 用户目录里）
+    → 平台默认路径。这样在 WSL / 任意 shell 里跑都能找到词库。
+    """
     root = os.environ.get("RIME_USER_DIR")
+    if not root:
+        guess = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if os.path.isdir(os.path.join(guess, "dicts")):
+            root = guess
     if not root:
         root = (os.path.join(os.environ.get("APPDATA", ""), "Rime") if os.name == "nt"
                 else os.path.expanduser("~/Library/Rime"))
