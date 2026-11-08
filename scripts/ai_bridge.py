@@ -220,7 +220,13 @@ def load_config(path=None):
 
 # ---------------------------------------------------------------- 请求
 def parse_result(text):
-    """模型输出 → {"zh","pos","cap"}；不是 JSON 就整段当释义（兼容旧 prompt）。"""
+    """模型输出 → {"zh","pos","cap"}；查不到就返回 None。
+
+    模型返回合法 JSON 但没有释义（zh 为空）时返回 None —— 这一次请求当作失败，
+    不写进词库。否则会把原始 JSON 串当成释义，候选栏里出现
+    {"zh":"","pos":"" 这种垃圾。
+    不是 JSON 的纯文本仍整段当释义（兼容旧 prompt）。
+    """
     raw = (text or "").strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
@@ -235,6 +241,8 @@ def parse_result(text):
                 pos = str(obj.get("pos") or "").strip()
                 cap = obj.get("cap")
                 return {"zh": zh, "pos": pos, "cap": bool(cap)}
+            # 合法 JSON 但没有释义 → 当作没查到，别把原文当释义
+            return None
     except (json.JSONDecodeError, ValueError):
         pass
     return {"zh": raw, "pos": "", "cap": False}
@@ -987,6 +995,11 @@ def selftest():
     assert parse_result('{"zh":"喂","pos":"int.","cap":false}') == {"zh": "喂", "pos": "int.", "cap": False}
     assert parse_result('```json\n{"zh":"树","pos":"n."}\n```')["zh"] == "树"
     assert parse_result("只是个普通释义") == {"zh": "只是个普通释义", "pos": "", "cap": False}
+    # 合法 JSON 但没有释义 → 当作失败（None），不能把原文当释义写进词库
+    assert parse_result('{"zh":"","pos":"","cap":false}') is None
+    assert parse_result('{"zh":""}') is None
+    assert parse_result('{"zh":"   "}') is None
+    assert parse_result('{"foo":1}') is None
     assert display_text({"zh": "电脑", "pos": "n."}) == "n. 电脑"
 
 
