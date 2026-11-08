@@ -37,14 +37,18 @@ Windows（PowerShell）：
 Copy-Item -Recurse -Force lua,scripts,dicts,docs,tests *.yaml "$env:APPDATA\Rime\"
 ```
 
-macOS / Linux：
+macOS：一条命令（自动备份 + 保留机器专属文件 + 重新部署）
 
 ```bash
-# macOS (Squirrel)
-cp -r lua scripts dicts docs tests *.yaml ~/Library/Application\ Support/Rime/
-# Linux ibus
+bash install-macos.sh
+```
+
+Linux：手动拷
+
+```bash
+# ibus
 cp -r lua scripts dicts docs tests *.yaml ~/.config/ibus/rime/
-# Linux fcitx5
+# fcitx5
 cp -r lua scripts dicts docs tests *.yaml ~/.local/share/fcitx5/rime/
 ```
 
