@@ -61,6 +61,24 @@ en_ai:
 * **按住 Shift 打字不受影响**（Shift+a 依然是大写 A），判定方式和 Rime 原生的「单击 Shift 切西文」一致；
 * 英文模式里要打大写字母用 **Caps Lock**（Shift 已经被用来切方案了）。
 
+### 切换时的标点状态（踩过的坑）
+
+`Context` 的 option 是**会话级**的，`apply_schema()` **不会**把它还原。英文方案里
+`ascii_punct: 1`（固定 ASCII 标点），切回中文后这个 1 还在 → 逗号句号一直是 `, .`，
+看起来像"中文方案的标点坏了"。
+
+`mode_switch.lua` 因此在切换时两边都显式设一遍：
+
+```lua
+-- 切到 english：记住中文侧的值，然后强制 ASCII 标点
+ctx:set_property("last_cn_ascii_punct", punct and "1" or "0")
+ctx:set_option("ascii_punct", true);  ctx:set_option("ascii_mode", false)
+
+-- 切回中文：还原（原本 Ctrl+. 开着 ascii_punct 的仍然开着）
+ctx:set_option("ascii_punct", ctx:get_property("last_cn_ascii_punct") == "1")
+ctx:set_option("ascii_mode", false)
+```
+
 实现：`lua/mode_switch.lua`（processor，放在 processors 第一位）。
 它在 Shift「松开」时判断「这期间有没有按过别的键」——没有才算单击，
 切换用 `engine:apply_schema(Schema(...))`（librime-lua 提供的能力）。

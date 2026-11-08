@@ -14,6 +14,10 @@
 --
 -- 切到英文时把当前方案 id 记在 context 属性里（属性跨方案切换保留），切回来时用。
 --
+-- 顺带修标点：Context 的 option 是会话级的，apply_schema 不会还原，
+-- 英文方案的 ascii_punct=1 会滲到中文方案上（切回来逗号句号还是英文的）。
+-- 所以切换时两边的 ascii_punct / ascii_mode 都显式设一遍。
+--
 -- 挂载：engine/processors 第一项 lua_processor@*mode_switch
 
 local M = {}
@@ -21,6 +25,17 @@ local M = {}
 local ENGLISH = "english"
 local DEFAULT_CN = "double_pinyin_mspy"
 local PROP = "last_cn_schema"
+-- 切到英文前把中文侧的 ascii_punct 记下来，切回来时还原
+local PROP_PUNCT = "last_cn_ascii_punct"
+
+-- Context 的 option 是会话级的，apply_schema **不会**把它还原：
+-- english 方案里 ascii_punct 是 1，切回中文后它还是 1 ——
+-- 逗号句号就一直是英文的 , . 这就是「切回来标点不对」的原因。
+-- 两边都显式设一遍。
+local function set_options(ctx, ascii_punct, ascii_mode)
+  pcall(function() ctx:set_option("ascii_punct", ascii_punct) end)
+  pcall(function() ctx:set_option("ascii_mode", ascii_mode) end)
+end
 
 local function current_schema(env)
   local s = env.engine.schema
@@ -66,9 +81,15 @@ function M.func(key, env)
         if back == nil or back == "" or back == ENGLISH then
           back = DEFAULT_CN
         end
+        -- 还原中文标点（原本就开着 ascii_punct 的保持开着）
+        set_options(ctx, ctx:get_property(PROP_PUNCT) == "1", false)
         env.engine:apply_schema(Schema(back))
       else
         ctx:set_property(PROP, cur)
+        -- 记住中文侧现在的标点状态，英文固定用 ASCII 标点
+        local ok, punct = pcall(function() return ctx:get_option("ascii_punct") end)
+        ctx:set_property(PROP_PUNCT, (ok and punct) and "1" or "0")
+        set_options(ctx, true, false)
         env.engine:apply_schema(Schema(ENGLISH))
       end
       -- 注意：apply_schema 会重建 processor 链（当前这个也会被销毁），
