@@ -9,6 +9,9 @@ patch:
   # 打开方案选单的备用热键（F4 在有些应用里被占用）
   "switcher/hotkeys/+":
     - Control+Shift+E
+  # F4 里切换过的开关存进 user.yaml，重启输入法仍然生效
+  switcher/save_options:
+    - no_auto_space
   schema_list:
     - {schema: double_pinyin_mspy}
     - {schema: luna_pinyin}

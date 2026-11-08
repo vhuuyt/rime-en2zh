@@ -24,10 +24,14 @@ switches:
   - name: ai_translate
     reset: 1
     states: [ AI关, AI开 ]
-  # F4 选单里的「自动空格」开关（关掉后选词上屏不再补尾随空格）
-  - name: auto_space
-    reset: 1
-    states: [ 自动空格关, 自动空格开 ]
+  # F4 选单里的「自动空格」开关。注意两点：
+  #   1. 反向命名（no_auto_space）：option 未设 = false = 自动空格「开」，
+  #      这样不写 reset 也能默认开启。
+  #   2. **故意不写 reset** —— InitializeOptions() 在每次切方案时都会把带
+  #      reset 的 option 重置回默认值，写了 reset 就等于 F4 里关掉、切个方案
+  #      又自己开回来了（也存不进 user.yaml）。
+  - name: no_auto_space
+    states: [ 自动空格开, 自动空格关 ]
   # >>> ai_profile auto
   - name: ai_profile
     options: [ "ai_minimax", "ai_openai", "ai_deepseek" ]

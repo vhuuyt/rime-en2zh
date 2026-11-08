@@ -108,7 +108,13 @@ local function has_states(text, option)
   return cur == option and hit
 end
 
-check("english 声明了 auto_space 开关（F4 可见）", has_states(en, "auto_space"))
+check("english 声明了 no_auto_space 开关（F4 可见）", has_states(en, "no_auto_space"))
+check("no_auto_space 故意不写 reset（写了每次切方案都会重置回去）",
+      reset_of(en, "no_auto_space") == nil, tostring(reset_of(en, "no_auto_space")))
+
+local def = read("default.custom.yaml")
+check("default.custom.yaml 把 no_auto_space 加进 switcher/save_options",
+      def ~= nil and def:find("save_options") ~= nil and def:find("no_auto_space") ~= nil)
 check("english ai_translate 开关仍在菜单", has_states(en, "ai_translate"))
 check("english ascii_punct 不显示在菜单（无 states）", not has_states(en, "ascii_punct"))
 

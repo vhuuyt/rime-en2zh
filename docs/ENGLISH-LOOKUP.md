@@ -28,26 +28,45 @@
 
 ### 两个开关
 
-**① F4 选单里的「自动空格」（临时，随时切）**
-
-`english.schema.yaml` 的 `switches` 里声明着，所以 F4 菜单里能看到
-「自动空格开 → 自动空格关」这一项：
+**① F4 选单里的「自动空格」（随时切，会记住）**
 
 ```yaml
+# english.schema.yaml
 switches:
-  - name: auto_space
-    reset: 1
-    states: [ 自动空格关, 自动空格开 ]
+  - name: no_auto_space          # 反向命名，见下面第 2 点
+    states: [ 自动空格开, 自动空格关 ]
+```
+```yaml
+# default.custom.yaml
+patch:
+  switcher/save_options:
+    - no_auto_space              # 存进 user.yaml，重启后仍然生效
 ```
 
-> F4 菜单只显示**带 `states`** 的 switch —— `switch_translator.cc` 里
-> `if (!has_state_label(option, 0)) return kContinue;`。
-> 所以 `ascii_mode` / `ascii_punct` 没写 `states`，就不会出现在菜单里（故意的）。
+F4 菜单里显示成「自动空格开 → 自动空格关」，选中即切；`en_space.lua` 每次按键
+读一遍这个 option，**改完立刻生效**，不用重新部署。
 
-`en_space.lua` 每次按键都读一遍这个 option，**改完立刻生效**，不用重新部署。
-`reset: 1` 表示每次进英文方案默认开着；没加到 `switcher/save_options`，
-所以重启输入法会回到默认（想跨会话记住就把 `auto_space` 加进
-`default.custom.yaml` 的 `switcher/save_options`）。
+两个关键细节：
+
+1. **菜单里只显示带 `states` 的 switch** —— `switch_translator.cc` 里
+   `if (!has_state_label(option, 0)) return kContinue;`。所以 `ascii_mode` /
+   `ascii_punct` 没写 `states` 就不会出现在菜单（故意的）。
+
+2. **这个开关故意不写 `reset`**，而且是反向命名（`no_auto_space`）。原因在
+   `ConcreteEngine`：
+
+   ```cpp
+   ConcreteEngine::ConcreteEngine() {
+     switcher_->RestoreSavedOptions();   // ① 先读 user.yaml 里存的开关
+     InitializeComponents();
+     InitializeOptions();                // ② 再按 switches[].reset 覆盖一遍
+   }
+   ```
+   `ApplySchema`（切方案）也会再跑一次 ②。所以**带 `reset` 的开关每次切方案都会
+   被重置回默认值** —— 在 F4 里关掉、Shift 切个方案就自己开回来了，也存不住。
+   不写 `reset` 时 `reset_value = -1`，`InitializeOptions` 跳过它，值才能留住；
+   代价是 option 未设时的默认值是 false，所以把语义反过来：
+   `no_auto_space` 为 false = 自动空格**开**（这正好是默认值）。
 
 **② yaml 里的总开关（永久）**
 
