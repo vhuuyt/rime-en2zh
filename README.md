@@ -94,7 +94,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 │   ├── en_ai_candidate.lua      英文：大写词按小写回退补候选
 │   ├── en_dict_data.lua         英文：词表共享模块（多组件共用一份）
 │   ├── en_assoc.lua             英文：候选改造（释义贴尾部、滚动、补单词候选）
-│   └── en_space.lua             英文：选词后自动补尾随空格（连打不粘词）
+│   └── en_space.lua             英文：选词上屏时补尾随空格（processor，连打不粘词）
 ├── scripts/                     需要计时器/网络/进程的部分（Python，标准库）
 │   ├── ai_bridge.py             大模型桥（常驻）：计时、调 API、写词库、热重载
 │   ├── ecdict2dict.py           ECDICT csv → 词库（含化学词库、时态变形）

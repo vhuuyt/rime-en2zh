@@ -35,6 +35,7 @@ engine:
   processors:
     - lua_processor@*mode_switch        # Shift 单击切回中文方案
     - lua_processor@*en_ai_request
+    - lua_processor@*en_space           # 选词上屏时自动补尾随空格（英文连打用）
     - lua_processor@*typst_shortcuts   # Ctrl+. / Ctrl+Shift+, / Ctrl+Shift+G
     - ascii_composer
     - recognizer
@@ -57,7 +58,6 @@ engine:
     - punct_translator
   filters:
     - lua_filter@*en_assoc            # 联想模式：释义进 comment、丢掉释义行
-    - lua_filter@*en_space            # 选词后自动补尾随空格（英文连打用）
     - uniquifier
 
 speller:
@@ -112,3 +112,4 @@ en_ai:
   step: 1              # 每次重绘前进几个字符
   min_input_len: 2     # 太短的词不查
   auto_space: 1        # 选词上屏时自动补一个尾随空格（0 = 不补）
+  auto_space_keys: space,Return   # 哪些键触发补空格（逗号分隔）

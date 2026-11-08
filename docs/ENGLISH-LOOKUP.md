@@ -10,7 +10,7 @@
 | `dicts/ai_ecdict.dict.yaml` | AI 补录（**唯一可删的**：`Ctrl+Delete` 只动它） |
 | `lua/en_ai_request.lua` | processor：每次输入变化把单词写进 `request.txt`；收到 `F24` 时重绘候选 |
 | `lua/en_ai_candidate.lua` | translator：读 `response.txt`，命中就补一条 `[AI]` 候选（带缓存） |
-| `lua/en_space.lua` | filter：给英文单词候选补尾随空格（选词后直接接下一个词） |
+| `lua/en_space.lua` | processor：选词上屏时给英文单词补尾随空格 |
 | `scripts/ecdict2dict.py` | ECDICT csv → 词库 |
 | `scripts/ai_bridge.py` | 桥接进程：监听请求文件的**静默期**，到点调 API，写回结果并注入 F24 |
 | `test_en_ai.lua` | 上面两个 lua 的离线回归测试 |
@@ -22,14 +22,37 @@
 在英文模式里用空格（或回车）选词，上屏的是 `"hello "` —— **末尾带一个空格**，
 接着打下一个词不会粘成 `helloworld`，不用再补一次空格。
 
-实现：`lua/en_space.lua`（filter，挂在 `en_assoc` 后面）。
-它只给**纯英文单词**候选（`^[%a][%a'%-]*$`）补空格；中文释义、标点不动。
+实现：`lua/en_space.lua`，一个 **processor**（不是 filter），它只看空格 / 回车：
+拿到当前高亮候选的文本 → `engine:commit_text(text .. " ")` → 吃掉这个按键。
+只对**纯英文单词**（`^[%a][%a'%-]*$`）生效；中文释义、标点、Typst 片段照旧走 Rime 自己。
 
-开关：`english.schema.yaml` → `en_ai/auto_space`（`1` = 补，`0` = 不补，默认 `1`）。
+开关：`english.schema.yaml` →
 
-> 候选文本多了尾随空格，所以凡是拿 `cand.text` 去查表的地方都要先 trim：
-> `en_ai_request.lua` 里的 `Ctrl+Enter`（查 `cands.tsv` 拿释义）和
-> `Ctrl+Delete`（删 AI 词）都已经 trim 过。
+```yaml
+en_ai:
+  auto_space: 1                 # 1 = 补，0 = 不补（默认 1）
+  auto_space_keys: space,Return # 哪些键触发（逗号分隔）
+```
+
+> ### 为什么不能用 filter 改 `cand.text`（踩过的坑）
+>
+> 最初写的是 filter：`cand.text = cand.text .. " "`。部署成功、候选也正常显示，
+> 但**提交出来没有空格**。原因在 librime-lua 的 `CandidateSet::set_text`：
+>
+> ```cpp
+> void set_text(T &c, const string &v) {
+>   if (auto p = dynamic_cast<SimpleCandidate *>(&c)) p->set_text(v);   // 只处理 SimpleCandidate
+> }
+> ```
+>
+> 词库（`table_translator`）给出的候选是 `Phrase`，不是 `SimpleCandidate`，
+> 所以赋值被**静默忽略**（不报错、不警告）。而 `set_comment` 同时处理
+> `Phrase` 和 `SimpleCandidate`，所以「释义贴到候选尾巴」一直正常 —— 两个属性行为不一样，
+> 很容易误判成「filter 生效了」。
+>
+> 要改候选文本得用 `cand:to_shadow_candidate(type, text, comment, inherit_comment)`
+> 包一层 ShadowCandidate；但那样还要兼顾各版 librime-lua 的可用性，
+> 不如直接在提交时刻自己 `commit_text` 来得确定。
 
 ## 怎么进来的：Shift 单击
 

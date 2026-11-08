@@ -1,6 +1,7 @@
 -- test_en_space.lua
 -- 用法：在 Rime 用户目录下执行  lua test_en_space.lua
--- 验证「选词后自动补尾随空格」：英文单词候选补一个空格，中文/标点不动，可关。
+-- 验证「选词后自动补尾随空格」：空格/回车提交单词时补一个空格，
+-- 中文释义/标点不补，可关，幂等。
 
 local script = arg and arg[0] or "test_en_space.lua"
 local dir = script:match("^(.*)[/\\][^/\\]*$") or "."
@@ -17,32 +18,32 @@ if not ok or type(M) ~= "table" or type(M.func) ~= "function" then
   os.exit(1)
 end
 
-local function mk_cand(text)
-  return { text = text, comment = nil, quality = 0 }
+-- ---- mock：key / context / engine ----
+local function mk_key(repr)
+  return { repr = function() return repr end }
 end
 
-local function mk_input(cands)
-  return {
-    iter = function()
-      local i = 0
-      return function()
-        i = i + 1
-        return cands[i]
-      end
-    end,
+local function mk_env(opts)
+  opts = opts or {}
+  local state = { committed = nil, cleared = 0, refreshed = 0 }
+  local ctx = {
+    input = opts.input or "",
+    _composing = (opts.composing ~= false),
+    _cand = opts.cand,
+    is_composing = function(self) return self._composing end,
+    get_selected_candidate = function(self) return self._cand end,
+    clear = function(self) state.cleared = state.cleared + 1 end,
+    refresh_non_confirmed_composition = function(self) state.refreshed = state.refreshed + 1 end,
   }
-end
-
-local yielded = {}
-function yield(c) yielded[#yielded + 1] = c end
-
-local function mk_env(auto_space)
   local env = {
     engine = {
+      context = ctx,
+      commit_text = function(_, text) state.committed = text end,
       schema = {
         config = {
           get_string = function(_, key)
-            if key == "en_ai/auto_space" then return auto_space end
+            if key == "en_ai/auto_space" then return opts.auto_space end
+            if key == "en_ai/auto_space_keys" then return opts.keys end
             return nil
           end,
         },
@@ -50,7 +51,11 @@ local function mk_env(auto_space)
     },
   }
   M.init(env)
-  return env
+  return env, state
+end
+
+local function mk_cand(text)
+  return { text = text, comment = nil, quality = 0 }
 end
 
 local failed = 0
@@ -65,54 +70,78 @@ end
 
 print("== en_space 测试 (" .. dir .. ") ==")
 
--- 1. 英文单词候选补一个尾随空格
-local env = mk_env("1")
-yielded = {}
-M.func(mk_input({ mk_cand("hello"), mk_cand("help") }), env)
-check("单词候选补上空格", yielded[1] and yielded[1].text == "hello ",
-      yielded[1] and ("[" .. yielded[1].text .. "]") or "nil")
-check("第二个单词也补上空格", yielded[2] and yielded[2].text == "help ",
-      yielded[2] and ("[" .. yielded[2].text .. "]") or "nil")
-check("候选数量不变", #yielded == 2, "n=" .. #yielded)
+-- 1. 空格提交单词 → 上屏 "hello "
+local env, st = mk_env({ cand = mk_cand("hello"), input = "hello" })
+local r = M.func(mk_key("space"), env)
+check("空格被吃掉（return 1）", r == 1, "r=" .. tostring(r))
+check("提交文本带尾随空格", st.committed == "hello ", "[" .. tostring(st.committed) .. "]")
+check("提交后清空 composition", st.cleared == 1, "cleared=" .. tostring(st.cleared))
 
--- 2. 中文释义 / 标点不动
-yielded = {}
-M.func(mk_input({ mk_cand("interj. 喂, 嘿"), mk_cand("."), mk_cand("n. 消息") }), env)
-check("中文释义不加空格", yielded[1] and yielded[1].text == "interj. 喂, 嘿",
-      yielded[1] and ("[" .. yielded[1].text .. "]") or "nil")
-check("标点不加空格", yielded[2] and yielded[2].text == ".",
-      yielded[2] and ("[" .. yielded[2].text .. "]") or "nil")
-check("中文候选不加空格", yielded[3] and yielded[3].text == "n. 消息",
-      yielded[3] and ("[" .. yielded[3].text .. "]") or "nil")
+-- 2. 回车同样补空格
+local env2, st2 = mk_env({ cand = mk_cand("world"), input = "world" })
+M.func(mk_key("Return"), env2)
+check("回车也补空格", st2.committed == "world ", "[" .. tostring(st2.committed) .. "]")
 
--- 3. 带连字符 / 撇号的词也算单词
-yielded = {}
-M.func(mk_input({ mk_cand("well-known"), mk_cand("don't") }), env)
-check("连字符词补空格", yielded[1] and yielded[1].text == "well-known ",
-      yielded[1] and ("[" .. yielded[1].text .. "]") or "nil")
-check("撇号词补空格", yielded[2] and yielded[2].text == "don't ",
-      yielded[2] and ("[" .. yielded[2].text .. "]") or "nil")
+-- 3. 其它键放行
+local env3, st3 = mk_env({ cand = mk_cand("hello"), input = "hello" })
+local r3 = M.func(mk_key("a"), env3)
+check("普通字母键放行（return 2）", r3 == 2, "r=" .. tostring(r3))
+check("放行时不提交", st3.committed == nil, tostring(st3.committed))
 
--- 4. 已经有空格的不重复补
-yielded = {}
-M.func(mk_input({ mk_cand("hello ") }), env)
-check("幂等：不会补成两个空格", yielded[1] and yielded[1].text == "hello ",
-      yielded[1] and ("[" .. yielded[1].text .. "]") or "nil")
+-- 4. 中文释义 / 标点候选不补空格
+local env4, st4 = mk_env({ cand = mk_cand("interj. 喂, 嘿"), input = "hello" })
+local r4 = M.func(mk_key("space"), env4)
+check("中文候选放行", r4 == 2 and st4.committed == nil, "r=" .. tostring(r4))
 
--- 5. 开关关掉就不补
-local env0 = mk_env("0")
-yielded = {}
-M.func(mk_input({ mk_cand("hello") }), env0)
-check("auto_space=0 时不补空格", yielded[1] and yielded[1].text == "hello",
-      yielded[1] and ("[" .. yielded[1].text .. "]") or "nil")
+local env5, st5 = mk_env({ cand = mk_cand(".") })
+M.func(mk_key("space"), env5)
+check("标点候选不补空格", st5.committed == nil, tostring(st5.committed))
 
--- 6. 没写配置（nil）时默认补
-local envd = { engine = { schema = { config = { get_string = function() return nil end } } } }
-M.init(envd)
-yielded = {}
-M.func(mk_input({ mk_cand("hello") }), envd)
-check("默认开启", yielded[1] and yielded[1].text == "hello ",
-      yielded[1] and ("[" .. yielded[1].text .. "]") or "nil")
+-- 5. 连字符 / 撇号词算单词
+local env6, st6 = mk_env({ cand = mk_cand("well-known") })
+M.func(mk_key("space"), env6)
+check("连字符词补空格", st6.committed == "well-known ", "[" .. tostring(st6.committed) .. "]")
+
+local env7, st7 = mk_env({ cand = mk_cand("don't") })
+M.func(mk_key("space"), env7)
+check("撇号词补空格", st7.committed == "don't ", "[" .. tostring(st7.committed) .. "]")
+
+-- 6. 幂等：候选已带空格不会再补一个
+local env8, st8 = mk_env({ cand = mk_cand("hello ") })
+M.func(mk_key("space"), env8)
+check("幂等（不会变两个空格）", st8.committed == "hello ", "[" .. tostring(st8.committed) .. "]")
+
+-- 7. 没有候选时退回原始输入
+local env9, st9 = mk_env({ cand = nil, input = "quux" })
+local r9 = M.func(mk_key("space"), env9)
+check("无候选时用原始输入", r9 == 1 and st9.committed == "quux ",
+      "r=" .. tostring(r9) .. " [" .. tostring(st9.committed) .. "]")
+
+-- 8. 不在 composing 状态（直通 ASCII）时不干预
+local env10, st10 = mk_env({ cand = mk_cand("hello"), composing = false })
+local r10 = M.func(mk_key("space"), env10)
+check("非输入态放行", r10 == 2 and st10.committed == nil, "r=" .. tostring(r10))
+
+-- 9. 开关关掉就不补
+local env11, st11 = mk_env({ cand = mk_cand("hello"), auto_space = "0" })
+local r11 = M.func(mk_key("space"), env11)
+check("auto_space=0 时不干预", r11 == 2 and st11.committed == nil, "r=" .. tostring(r11))
+
+-- 10. 默认开启（没写配置）
+local env12, st12 = mk_env({ cand = mk_cand("hello") })
+M.func(mk_key("space"), env12)
+check("默认开启", st12.committed == "hello ", "[" .. tostring(st12.committed) .. "]")
+
+-- 11. 自定义触发键：只配 space 时 Return 不补
+local env13, st13 = mk_env({ cand = mk_cand("hello"), keys = "space" })
+local r13 = M.func(mk_key("Return"), env13)
+check("auto_space_keys 只写 space 时 Return 不补", r13 == 2 and st13.committed == nil,
+      "r=" .. tostring(r13))
+
+-- 12. 大写词（Typst 之类）也算单词
+local env14, st14 = mk_env({ cand = mk_cand("Typst") })
+M.func(mk_key("space"), env14)
+check("大写词补空格", st14.committed == "Typst ", "[" .. tostring(st14.committed) .. "]")
 
 print("")
 if failed == 0 then
