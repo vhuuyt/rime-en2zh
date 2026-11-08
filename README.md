@@ -109,7 +109,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 ├── docs/
 │   ├── ENGLISH-LOOKUP.md        英文模式细则（候选、键位、AI 链路）
 │   └── MULTI-DEVICE.md          多端同步（Windows/macOS/Linux、Rime 同步 vs git）
-└── tests/                       七个 Lua 回归测试（不需要输入法就能跑）
+└── tests/                       八个回归测试（Lua + 配置级，不需要输入法就能跑）
 ```
 
 运行时目录（不在这里，别手改）：`%TEMP%\rime_en_ai\`（请求文件、缓存、日志）
@@ -143,7 +143,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 
 | 键 | 作用 |
 |---|---|
-| **`Shift`（单击）** | **中文 ⇄ 英文模式**：中文方案里单击 Shift 切到「英文模式」（带释义），在英文模式里再单击切回刚才的中文方案（**标点会跟着切回中文**）。按住 Shift 打字不受影响（大写照常） |
+| **`Shift`（单击）** | **中文 ⇄ 英文模式**：中文方案里单击 Shift 切到「英文模式」（带释义），在英文模式里再单击切回刚才的中文方案（**标点跟着切回中文**，见 `switches/ascii_punct/reset`）。按住 Shift 打字不受影响（大写照常） |
 | `F4` / `Ctrl+Shift+E` / `` Ctrl+` `` | 方案选单（切换方案、切 AI 档位、AI 开关） |
 | `Caps Lock` | 系统级大写（英文模式里 Shift 用来切方案，大写用 Caps Lock） |
 

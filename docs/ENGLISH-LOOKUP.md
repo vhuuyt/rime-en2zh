@@ -61,23 +61,44 @@ en_ai:
 * **按住 Shift 打字不受影响**（Shift+a 依然是大写 A），判定方式和 Rime 原生的「单击 Shift 切西文」一致；
 * 英文模式里要打大写字母用 **Caps Lock**（Shift 已经被用来切方案了）。
 
-### 切换时的标点状态（踩过的坑）
+### 切换时的标点：用 switches 的 reset 就够（不要写 Lua）
 
-`Context` 的 option 是**会话级**的，`apply_schema()` **不会**把它还原。英文方案里
-`ascii_punct: 1`（固定 ASCII 标点），切回中文后这个 1 还在 → 逗号句号一直是 `, .`，
-看起来像"中文方案的标点坏了"。
+`Context` 的 option 是**会话级**的，但 `apply_schema()` 会按 schema 的
+`switches[].reset` 重新设一遍 —— `ConcreteEngine::ApplySchema` →
+`InitializeOptions()` → `Switches::FindOption()`：
 
-`mode_switch.lua` 因此在切换时两边都显式设一遍：
-
-```lua
--- 切到 english：记住中文侧的值，然后强制 ASCII 标点
-ctx:set_property("last_cn_ascii_punct", punct and "1" or "0")
-ctx:set_option("ascii_punct", true);  ctx:set_option("ascii_mode", false)
-
--- 切回中文：还原（原本 Ctrl+. 开着 ascii_punct 的仍然开着）
-ctx:set_option("ascii_punct", ctx:get_property("last_cn_ascii_punct") == "1")
-ctx:set_option("ascii_mode", false)
+```cpp
+inline static int reset_value(ConfigItemRef& item) {
+  auto reset = item["reset"];
+  return reset.IsValue() ? reset.ToInt() : -1;      // 没写 reset = -1 = 不动
+}
+...
+if (option.reset_value >= 0)
+  context_->set_option(option.option_name, (option.reset_value != 0));
 ```
+
+所以英文方案 `ascii_punct: reset 1` 切过去是 ASCII 标点，而**中文方案只要也写
+`reset: 0`，切回来就自动回中文标点**：
+
+```yaml
+switches:
+  - name: ascii_punct
+    reset: 0                 # ← 关键。不写就是 -1，会留着英文那边的 1
+    states: [ 。，, ．， ]
+```
+
+朙月拼音的 `switches` 在发行版自带的基础方案里，用补丁改：
+
+```yaml
+# luna_pinyin.custom.yaml
+patch:
+  switches/@3/reset: 0       # ascii_mode=0 / full_shape=1 / simplification=2 / ascii_punct=3
+```
+
+> 早期是在 `mode_switch.lua` 里切方案前后手动 `set_option`，虽然也能用，但
+> 只覆盖 Shift 切换这一条路 —— 用 F4 菜单切方案就不会走那段 Lua。写在
+> `switches/reset` 里是全部切换路径统一生效（会话启动、F4 菜单、Lua apply_schema）。
+> 回归测试见 `tests/test_punct_switch.lua`。
 
 实现：`lua/mode_switch.lua`（processor，放在 processors 第一位）。
 它在 Shift「松开」时判断「这期间有没有按过别的键」——没有才算单击，

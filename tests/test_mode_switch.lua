@@ -31,24 +31,19 @@ local function mk_key(repr, release, keycode)
   }
 end
 
-local function mk_env(schema_id, opts)
+local function mk_env(schema_id)
   local props = {}
   local applied = {}
-  local options = {}
-  for k, v in pairs(opts or {}) do options[k] = v end
   local env = {
     engine = {
       schema = { schema_id = schema_id },
       context = {
         set_property = function(_, k, v) props[k] = v end,
         get_property = function(_, k) return props[k] or "" end,
-        set_option = function(_, k, v) options[k] = v and true or false end,
-        get_option = function(_, k) return options[k] and true or false end,
       },
       apply_schema = function(_, schema) applied[#applied + 1] = schema.schema_id end,
     },
     applied = applied,
-    options = options,
   }
   M.init(env)
   return env
@@ -124,53 +119,7 @@ M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env7)
 M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env7)     -- → 回到中文
 check("切过去再切回来", env7.applied[1] == "double_pinyin_mspy", tostring(env7.applied[1]))
 
--- 8. 标点：切到英文 → ASCII 标点；切回中文 → 中文标点
-local envp = mk_env("double_pinyin_mspy")          -- 中文侧本来是中文标点
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), envp)
-M.func(mk_key("Shift+Shift_L", true, 0xFFE1), envp)
-check("切到 english 时 ascii_punct 打开", envp.options["ascii_punct"] == true,
-      tostring(envp.options["ascii_punct"]))
-
-local envp2 = mk_env("english")
-envp2.engine.context.set_property(envp2.engine.context, "last_cn_schema", "double_pinyin_mspy")
-envp2.engine.context.set_property(envp2.engine.context, "last_cn_ascii_punct", "0")
-envp2.options["ascii_punct"] = true                 -- 英文侧留下的状态
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), envp2)
-M.func(mk_key("Shift+Shift_L", true, 0xFFE1), envp2)
-check("切回中文后 ascii_punct 关掉（逗号句号恢复中文）", envp2.options["ascii_punct"] == false,
-      tostring(envp2.options["ascii_punct"]))
-
--- 8b. 中文侧本来就开着 ascii_punct（Ctrl+. 切过的）→ 切一圈回来仍然开着
-local envp3 = mk_env("double_pinyin_mspy", { ascii_punct = true })
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), envp3)
-M.func(mk_key("Shift+Shift_L", true, 0xFFE1), envp3)
-check("记住中文侧的 ascii_punct", envp3.engine.context:get_property("last_cn_ascii_punct") == "1",
-      envp3.engine.context:get_property("last_cn_ascii_punct"))
-local envp4 = mk_env("english")
-envp4.engine.context.set_property(envp4.engine.context, "last_cn_schema", "double_pinyin_mspy")
-envp4.engine.context.set_property(envp4.engine.context, "last_cn_ascii_punct", "1")
-envp4.options["ascii_punct"] = true
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), envp4)
-M.func(mk_key("Shift+Shift_L", true, 0xFFE1), envp4)
-check("原本开着 ascii_punct 的保持开着", envp4.options["ascii_punct"] == true,
-      tostring(envp4.options["ascii_punct"]))
-
--- 8c. 没有记录（旧状态）→ 回到中文标点
-local envp5 = mk_env("english")
-envp5.options["ascii_punct"] = true
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), envp5)
-M.func(mk_key("Shift+Shift_L", true, 0xFFE1), envp5)
-check("没有记录时回到中文标点", envp5.options["ascii_punct"] == false,
-      tostring(envp5.options["ascii_punct"]))
-
--- 8d. 切方案时都把 ascii_mode 清掉（中文要打中文，英文要打字母）
-local envp6 = mk_env("double_pinyin_mspy", { ascii_mode = true })
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), envp6)
-M.func(mk_key("Shift+Shift_L", true, 0xFFE1), envp6)
-check("切到英文时 ascii_mode 关掉", envp6.options["ascii_mode"] == false,
-      tostring(envp6.options["ascii_mode"]))
-
--- 9. 其它按键完全不干预
+-- 8. 其它按键完全不干预
 local env8 = mk_env("double_pinyin_mspy")
 r = M.func(mk_key("a"), env8)
 check("普通按键放行", r == 2 and #env8.applied == 0)

@@ -28,6 +28,9 @@ patch:
     - reverse_lookup_translator
     - script_translator
 
+  # 标点：切方案回来时强制中文标点。见 double_pinyin_mspy.schema.yaml 同名项
+  switches/@3/reset: 0
+
   key_binder/select_first_character: bracketleft
   key_binder/select_last_character: bracketright
   typst_dict/trigger: typ
