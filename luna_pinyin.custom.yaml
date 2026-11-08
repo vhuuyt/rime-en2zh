@@ -34,3 +34,6 @@ patch:
   key_binder/select_first_character: bracketleft
   key_binder/select_last_character: bracketright
   typst_dict/trigger: typ
+
+  # 右 Shift 的行为，同 double_pinyin_mspy.custom.yaml
+  en_ai/shift_right: ascii

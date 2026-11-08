@@ -107,7 +107,7 @@ en_ai:
 | 键 | 作用 |
 |---|---|
 | **左 Shift**（单击） | 中文 ⇄ **英文模式**（切方案，带释义的查词） |
-| **右 Shift**（单击） | 中文 ⇄ **西文**（只切 `ascii_mode`，不切方案 —— Rime 原生手感） |
+| **右 Shift**（单击） | 中文 ⇄ **西文**（只切 `ascii_mode`，不切方案 —— Rime 原生手感）；可用 `en_ai/shift_right: schema` 改成等同左 Shift |
 
 * 在**中文方案**（双拼 / 朙月）里**单击左 Shift** → 切到「英文模式」；
 * 在**英文模式**里**单击左（或右）Shift** → 切回刚才那个中文方案；
@@ -115,6 +115,18 @@ en_ai:
   英文模式里等同左 Shift；
 * **右 Shift 切换时会丢掉未上屏的码**（等同于按 Esc）—— 不像左 Shift 那样
   先把码上屏；切模式就是切模式，不夹带上屏动作；
+* 右 Shift 的行为可配：
+
+  ```yaml
+  # double_pinyin_mspy.custom.yaml / luna_pinyin.custom.yaml / english.schema.yaml
+  en_ai/shift_right: ascii    # 默认：中文 ⇄ 西文
+  # en_ai/shift_right: schema # 等同左 Shift，切方案
+  ```
+
+  macOS 上 Caps Lock 一般已经绑了「切换输入法」，这时右 Shift 的「西文」多了一层，
+  可以把它改成 `schema`；那份 `*.custom.yaml` 是 git 共享的，机器本地差异可以直接
+  改自己机器上的那份（或在 `.gitignore` 里排除）；
+
 * **按住 Shift 打字不受影响**（Shift+a 依然是大写 A），判定方式和 Rime 原生的「单击 Shift 切西文」一致；
 * 英文模式里要打大写字母用 **Caps Lock**（Shift 已经被用来切方案了）。
 

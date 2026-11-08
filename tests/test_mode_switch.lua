@@ -31,13 +31,21 @@ local function mk_key(repr, release, keycode)
   }
 end
 
-local function mk_env(schema_id)
+local function mk_env(schema_id, shift_right)
   local props = {}
   local applied = {}
   local options = {}
   local env = {
     engine = {
-      schema = { schema_id = schema_id },
+      schema = {
+        schema_id = schema_id,
+        config = {
+          get_string = function(_, key)
+            if key == "en_ai/shift_right" then return shift_right end
+            return nil
+          end,
+        },
+      },
       context = {
         set_property = function(_, k, v) props[k] = v end,
         get_property = function(_, k) return props[k] or "" end,
@@ -122,6 +130,15 @@ M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env5)
 M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env5)
 check("再按一次回到中文", env5.options["ascii_mode"] == false,
       tostring(env5.options["ascii_mode"]))
+
+-- 6b. en_ai/shift_right: schema → 右 Shift 等同左 Shift（切方案）
+local env6 = mk_env("double_pinyin_mspy", "schema")
+M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env6)
+local r6 = M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env6)
+check("shift_right=schema 时右 Shift 切方案", r6 == 1 and env6.applied[1] == "english",
+      "r=" .. tostring(r6) .. " schema=" .. tostring(env6.applied[1]))
+check("shift_right=schema 时不碰 ascii_mode", env6.options["ascii_mode"] == nil,
+      tostring(env6.options["ascii_mode"]))
 
 -- 7. 连续两次单击：切换 → 切回
 local env6 = mk_env("double_pinyin_mspy")

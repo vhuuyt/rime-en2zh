@@ -8,6 +8,11 @@
 -- 在英文模式里右 Shift 等同于左 Shift（切回中文方案）—— 英文模式本来就是英文，
 -- 再切「西文」没意义。
 --
+-- 右 Shift 的行为可配（en_ai/shift_right）：
+--   ascii  （默认）中文 ⇄ 西文，不切方案
+--   schema        等同左 Shift，切方案（macOS 上 Caps Lock 已经管系统输入法切换，
+--                 若觉得多一层西文多余，把它设成 schema）
+--
 -- 判定沿用 Rime 原生「单击 Shift 切西文」的手感：
 --   按下 Shift 记一笔；这期间按了别的键 → 算「按住 Shift 打字」，不切换；
 --   松开 Shift 时若期间没按过别的键 → 单击，切换方案。
@@ -60,9 +65,18 @@ local function toggle_ascii_mode(ctx)
   ctx:set_option("ascii_mode", not ctx:get_option("ascii_mode"))
 end
 
+local function cfg_str(cfg, key)
+  if not cfg then return nil end
+  local v = cfg:get_string(key)
+  if v == nil or v == "" then return nil end
+  return v
+end
+
 function M.init(env)
   env.shift_down = false
   env.typed = false
+  local cfg = env.engine.schema and env.engine.schema.config
+  env.shift_right = (cfg_str(cfg, "en_ai/shift_right") or "ascii"):lower()
 end
 
 function M.func(key, env)
@@ -80,7 +94,7 @@ function M.func(key, env)
 
       local ctx = env.engine.context
       local cur = current_schema(env)
-      if is_right_shift(key, repr) and cur ~= ENGLISH then
+      if is_right_shift(key, repr) and cur ~= ENGLISH and env.shift_right ~= "schema" then
         -- 右 Shift：中文 ⇄ 西文（不切方案）
         toggle_ascii_mode(ctx)
         return 1
