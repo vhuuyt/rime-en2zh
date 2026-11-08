@@ -13,6 +13,8 @@ local M = {}
 
 -- 词表（共享模块）：用来判断"这个词有没有本地释义"
 local dict_data = require("en_dict_data")
+-- 内存状态（滚动偏移、完整释义）：与 filter 共享，避免每次按键读写文件
+local state = require("en_state")
 
 local function default_dir()
   local tmp = os.getenv("TEMP") or os.getenv("TMPDIR") or os.getenv("TMP") or "/tmp"
@@ -39,8 +41,9 @@ function M.init(env)
   env.trigger = cfg_str(cfg, "en_ai/trigger") or ""
   env.tab_key = cfg_str(cfg, "en_ai/tab") or "Tab"
   env.tab_step = tonumber(cfg_str(cfg, "en_ai/tab_step") or "") or 4
-  env.scroll_file = env.dir .. "/scroll.txt"
-  env.cands_file = env.dir .. "/cands.tsv"
+  env.width = tonumber(cfg_str(cfg, "en_ai/width") or "") or 20
+  env.marquee_auto = (cfg_str(cfg, "en_ai/marquee_auto") or "0") ~= "0"
+  env.last_profile = nil
   env.commit_key = cfg_str(cfg, "en_ai/commit_key") or "Control+Return"
   env.delete_key = cfg_str(cfg, "en_ai/delete_key") or "Control+Delete"
   env.delete_key_alt = cfg_str(cfg, "en_ai/delete_key_alt") or "Control+BackSpace"
@@ -75,13 +78,8 @@ local function sync_profile(ctx, env)
     end
   end
   name = name or env.profiles[1]
-  local current = ""
-  local f = io.open(env.profile_file, "r")
-  if f then
-    current = (f:read("*l") or ""):gsub("%s+$", "")
-    f:close()
-  end
-  if current == name then return end
+  if env.last_profile == name then return end   -- 没变 → 不碰文件
+  env.last_profile = name
   local out = io.open(env.profile_file, "w")
   if out then
     out:write(name, "\n")
@@ -158,31 +156,21 @@ function M.func(key, env)
     return 2
   end
 
-  -- Ctrl+Enter = 把当前高亮候选的释义上屏（联想模式下释义只在 comment 里）
+  -- Ctrl+Enter = 把当前高亮候选的释义上屏（完整释义在 en_state 里，filter 写的）
   if repr == env.commit_key and ctx:is_composing() then
     local cand = ctx:get_selected_candidate()
     local word = cand and cand.text or nil
-    if word then
-      local f = io.open(env.cands_file, "r")
-      if f then
-        f:read("*l")                       -- 第一行是时间戳
-        local meaning
-        for line in f:lines() do
-          local w, m = line:match("^([^\t]*)\t(.+)$")
-          if w == word then
-            meaning = m
-            break
-          end
-        end
-        f:close()
-        if meaning and meaning ~= "" then
-          env.engine:commit_text(meaning)
-          ctx:clear()
-          return 1
-        end
-      end
+    local meaning = word and state.get_meaning(word) or nil
+    if not meaning and cand then
+      local c = cand.comment
+      -- "~xxx" 是补全提示（剩余字母），不是释义
+      if c and c ~= "" and c:sub(1, 1) ~= "~" then meaning = c end
     end
-    -- 没找到释义：继续往下走（可能还配了 en_ai/trigger）
+    if meaning and meaning ~= "" then
+      env.engine:commit_text(meaning)
+      ctx:clear()
+      return 1
+    end
   end
 
   -- Tab 有两个用途，看当前词有没有本地释义：
@@ -192,21 +180,12 @@ function M.func(key, env)
   if repr == env.tab_key and ctx:is_composing() then
     local cur = ctx.input or ""
     if cur ~= "" then
-      -- 1) 有长释义？scroll.txt 是 filter 写的
-      local f = io.open(env.scroll_file, "r")
-      if f then
-        local offset = tonumber(f:read("*l") or "") or 0
-        local scroll_input = f:read("*l") or ""
-        f:close()
-        if scroll_input == cur then
-          local out = io.open(env.scroll_file, "w")
-          if out then
-            out:write(tostring(offset + env.tab_step), "\n", cur, "\n")
-            out:close()
-          end
-          ctx:refresh_non_confirmed_composition()
-          return 1                     -- 吃掉 Tab，不再传给应用
-        end
+      -- 1) 有长释义？完整释义在 en_state 里（filter 写的）
+      local full = state.get_meaning(cur)
+      if full and (utf8.len(full) or #full) > env.width then
+        state.bump(cur, env.tab_step)
+        ctx:refresh_non_confirmed_composition()
+        return 1                     -- 吃掉 Tab，不再传给应用
       end
       -- 2) 本地有释义 → Tab 无事可做，放行
       local words = dict_data.load(env.base_dict, env.ai_dict)
@@ -240,18 +219,16 @@ function M.func(key, env)
     return 2
   end
 
-  -- 非字母键（导航/选词/空格）时暂停跑马灯，免得重绘冲掉选中项
-  local repr_ok = false
-  if repr == "F24" then
-    repr_ok = true
-  elseif repr:match("^[a-z]$") or repr:match("^Shift%+[A-Z]$") then
-    repr_ok = true
-  end
-  if not repr_ok then
-    local f = io.open((env.dir or "") .. "/marquee_pause.txt", "w")
-    if f then
-      f:write(tostring(os.time()))
-      f:close()
+  -- 非字母键（导航/选词/空格）时暂停自动跑马灯，免得重绘冲掉选中项。
+  -- 只有开了自动跑马灯（marquee_auto）才需要写这个标记；默认关 → 不写文件。
+  if env.marquee_auto then
+    local repr_ok = (repr == "F24") or repr:match("^[a-z]$") or repr:match("^Shift%+[A-Z]$")
+    if not repr_ok then
+      local f = io.open((env.dir or "") .. "/marquee_pause.txt", "w")
+      if f then
+        f:write(tostring(os.time()))
+        f:close()
+      end
     end
   end
 

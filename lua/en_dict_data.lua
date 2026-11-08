@@ -97,7 +97,13 @@ function M.meaning(words, text)
 end
 
 -- 载入（带缓存；任何词库变了会自动重读）
+-- 版本检查最多每秒一次 —— 否则每次按键都要读两个文件头，代价太大。
 function M.load(base_path, ai_path)
+  local now = os.time()
+  if M.words and now - (M.checked_at or 0) < 1 then
+    return M.words
+  end
+  M.checked_at = now
   local base_ver = file_version(base_path)
   local ai_ver = file_version(ai_path)
   if M.words and base_ver == M.base_ver and ai_ver == M.ai_ver then

@@ -14,6 +14,8 @@ end
 
 package.path = dir .. "/lua/?.lua;" .. package.path   -- 让 require("en_dict_data") 找得到
 
+local state = require("en_state")     -- 与 filter 共享的内存状态
+
 local ok1, req = pcall(dofile, dir .. "/lua/en_ai_request.lua")
 local ok2, cand = pcall(dofile, dir .. "/lua/en_ai_candidate.lua")
 if not (ok1 and ok2) then
@@ -237,7 +239,7 @@ local function write_cands(rows)
 end
 
 env, ctx = mk_env(req, { input = "hello" })
-write_cands({ "hello\tinterj. 喂；嘿", "help\tv. 帮助" })
+state.set_meaning("hello", "interj. 喂；嘿")
 ctx.cand = { text = "hello" }
 local cr = req.func(mk_key("Control+Return"), env)
 check("Ctrl+Enter 上屏释义", ctx.committed[1] == "interj. 喂；嘿",
@@ -247,58 +249,46 @@ check("Ctrl+Enter 清空输入", ctx.cleared == true)
 
 -- 高亮的是别的候选，就上屏那个词的释义
 env, ctx = mk_env(req, { input = "hel" })
-write_cands({ "hello\tinterj. 喂；嘿", "help\tv. 帮助" })
+state.set_meaning("help", "v. 帮助")
 ctx.cand = { text = "help" }
 req.func(mk_key("Control+Return"), env)
 check("上屏高亮候选的释义", ctx.committed[1] == "v. 帮助", "got=" .. tostring(ctx.committed[1]))
 
+-- 候选注释里也有释义时（filter 滚动前）也能上屏
+env, ctx = mk_env(req, { input = "hello" })
+ctx.cand = { text = "hello", comment = "interj. 喂；嘿" }
+req.func(mk_key("Control+Return"), env)
+check("候选注释里的释义也能上屏", ctx.committed[1] == "interj. 喂；嘿",
+      "got=" .. tostring(ctx.committed[1]))
+
+-- 补全提示 "~xxx" 不算释义
+env, ctx = mk_env(req, { input = "hel" })
+state.set_meaning("hello", nil)
+ctx.cand = { text = "hello", comment = "~lo" }
+local cr3 = req.func(mk_key("Control+Return"), env)
+check("补全提示不算释义", cr3 == 2, "r=" .. tostring(cr3))
+
 -- 没有对应释义 → 放行
 env, ctx = mk_env(req, { input = "hello" })
-write_cands({})
+state.set_meaning("hello", nil)
 ctx.cand = { text = "hello" }
 local cr2 = req.func(mk_key("Control+Return"), env)
 check("没有释义时放行", cr2 == 2 and #ctx.committed == 0, "r=" .. tostring(cr2))
-
--- Tab 滚动：scroll.txt 里有当前词才吃掉 Tab
-local function write_scroll(offset, input)
-  local f = io.open(bridge .. "/scroll.txt", "w")
-  f:write(tostring(offset), "\n", input, "\n")
-  f:close()
-end
-local function read_scroll()
-  local f = io.open(bridge .. "/scroll.txt", "r")
-  if not f then return nil, nil end
-  local off = f:read("*l")
-  local inp = f:read("*l")
-  f:close()
-  return off, inp
-end
-
-env, ctx = mk_env(req, { input = "information" })
-write_scroll(0, "information")
-local r0 = req.func(mk_key("Tab"), env)
-local off1 = read_scroll()
-check("有长释义时 Tab 被吃掉", r0 == 1, "r=" .. tostring(r0))
-check("Tab 让偏移 +4", off1 == "4", "got=" .. tostring(off1))
-check("Tab 触发候选重绘", ctx.refreshed == 1, "n=" .. tostring(ctx.refreshed))
-
-env, ctx = mk_env(req, { input = "hello" })
-write_scroll(0, "information")            -- 偏移属于别的词
-local r1 = req.func(mk_key("Tab"), env)
-check("词不匹配时 Tab 放行", r1 == 2, "r=" .. tostring(r1))
 
 
 -- Tab 三种情况
 -- (a) 有长释义 → 滚动（scroll.txt 里有当前词）
 -- (b) 有短释义 → 放行
 -- (c) 没有释义 → 触发 AI 请求（request.txt 写成 delay 0）
-env, ctx = mk_env(req, { input = "hello" })
-write_scroll(0, "hello")
+env, ctx = mk_env(req, { input = "information" })
+state.set_meaning("information", "n. 消息；知识；通知；情报；信息；问讯处")   -- 超过 width
 local ra = req.func(mk_key("Tab"), env)
 check("有长释义：Tab 被吃掉并滚动", ra == 1, "r=" .. tostring(ra))
+check("滚动偏移 +4", state.offset_of("information") == 4,
+      "off=" .. tostring(state.offset_of("information")))
 
 env, ctx = mk_env(req, { input = "hello" })
-os.remove(bridge .. "/scroll.txt")
+state.set_meaning("hello", "interj. 喂；嘿")     -- 短释义
 os.remove(bridge .. "/request.txt")
 local rb = req.func(mk_key("Tab"), env)
 local reqw = read_request()
@@ -306,7 +296,7 @@ check("有短释义：Tab 放行", rb == 2, "r=" .. tostring(rb))
 check("有短释义：不发 AI 请求", reqw == nil, "got=" .. tostring(reqw))
 
 env, ctx = mk_env(req, { input = "zzzqqq" })
-os.remove(bridge .. "/scroll.txt")
+state.set_meaning("zzzqqq", nil)
 os.remove(bridge .. "/request.txt")
 local rc = req.func(mk_key("Tab"), env)
 local w2, d2 = read_request()
@@ -314,18 +304,19 @@ check("没有释义：Tab 触发 AI", rc == 1, "r=" .. tostring(rc))
 check("AI 请求是当前词", w2 == "zzzqqq", "got=" .. tostring(w2))
 check("AI 请求 delay=0（立即发）", d2 == "0", "got=" .. tostring(d2))
 
--- 非字母键（导航/选词）要写暂停标记，让跑马灯停下来
+-- 暂停标记只在开了自动跑马灯时才写（默认关 → 每次按键不碰文件）
 env, ctx = mk_env(req, { input = "hello" })
 os.remove(bridge .. "/marquee_pause.txt")
 req.func(mk_key("Down"), env)
 local pf = io.open(bridge .. "/marquee_pause.txt", "r")
-check("非字母键写暂停标记", pf ~= nil)
+check("默认不写暂停标记", pf == nil)
 if pf then pf:close() end
-os.remove(bridge .. "/marquee_pause.txt")
+
 env, ctx = mk_env(req, { input = "hello" })
-req.func(mk_key("a"), env)
+env.marquee_auto = true
+req.func(mk_key("Down"), env)
 pf = io.open(bridge .. "/marquee_pause.txt", "r")
-check("字母键不写暂停标记", pf == nil)
+check("开自动跑马灯时写暂停标记", pf ~= nil)
 if pf then pf:close() end
 
 -- ---------- 候选侧 ----------

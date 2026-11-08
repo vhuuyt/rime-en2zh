@@ -2,13 +2,19 @@
 --
 -- 把候选改造成"单词 + 尾部释义"：
 --   * 释义候选丢掉，改贴到单词候选的 comment 上
---   * 释义超过 en_ai/width 就按窗口滚动（偏移写在 scroll.txt，Tab 由 processor 处理）
---   * 词库（含 AI 补录）里都没有的词，补一个单词候选出来，保证空格上屏的是单词
---   * 同时写 cands.tsv（候选 → 完整释义），给 Ctrl+Enter 用
+--   * 释义超过 en_ai/width 就按窗口滚动（偏移放在 en_state 内存里，Tab 由 processor 推进）
+--   * 词库（本地 + AI 补录）里都没有的词，补一个单词候选出来，保证空格上屏的是单词
+--   * 完整释义记在 en_state 里，给 Ctrl+Enter 用
+--
+-- ★ 每次按键不做任何文件写入：滚动偏移、完整释义都放在共享内存模块 en_state。
+--   唯一可能读文件的是"本地查不到释义"时读一次 response.txt（AI 结果），很罕见。
 --
 -- 挂载：english.schema.yaml → engine/filters 的 lua_filter@*en_assoc
 
 local M = {}
+
+local dict_data = require("en_dict_data")
+local state = require("en_state")
 
 local WORD_RE = "^[%a][%a'%-]*$"
 
@@ -29,12 +35,6 @@ local function cfg_str(cfg, key)
   return v
 end
 
-local function split_tabs(line)
-  local cols = {}
-  for c in (line .. "\t"):gmatch("([^\t]*)\t") do cols[#cols + 1] = c end
-  return cols
-end
-
 local function char_at(s, i)
   local a = utf8.offset(s, i)
   if not a then return " " end
@@ -42,6 +42,7 @@ local function char_at(s, i)
   return s:sub(a, (b or (#s + 1)) - 1)
 end
 
+-- 释义太长时按窗口滚动（offset 由 en_state 管）
 local function scroll(text, width, offset)
   local n = utf8.len(text) or #text
   if width <= 0 or n <= width then return text end
@@ -55,26 +56,7 @@ local function scroll(text, width, offset)
   return table.concat(out)
 end
 
--- 滚动状态放在文件里，让 en_ai_request（processor）按 Tab 时也能改：
---   <dir>/scroll.txt  第一行 = 偏移量，第二行 = 这条偏移对应的输入
-local function read_scroll(env)
-  local f = io.open(env.scroll_file, "r")
-  if not f then return 0, "" end
-  local offset = tonumber(f:read("*l") or "") or 0
-  local input = f:read("*l") or ""
-  f:close()
-  return offset, input
-end
-
-local function write_scroll(env, offset, input)
-  local f = io.open(env.scroll_file, "w")
-  if f then
-    f:write(tostring(offset), "\n", input or "", "\n")
-    f:close()
-  end
-end
-
--- 桥刚查完的译文（response.txt）
+-- 桥刚返回的译文（只在"本地没有释义"时才读一次）
 local function read_response(dir)
   local f = io.open(dir .. "/response.txt", "r")
   if not f then return nil, nil end
@@ -86,64 +68,20 @@ local function read_response(dir)
   return word, text
 end
 
--- 释义来源：桥刚返回的译文优先，其次词库（本地 + AI 补录），大写词按小写回退
--- response.txt 每次候选生成只读一次（缓存在 env 里），不是每个候选读一次
-local function response_of(env)
-  if env.resp_word == nil then
-    local word, got = read_response(env.dir)
-    env.resp_word = word or ""
-    env.resp_text = got or ""
-  end
-  return env.resp_word, env.resp_text
-end
-
 local function meaning_for(env, text)
-  local word, got = response_of(env)
-  if word == text and got ~= "" then
-    return got
-  end
-  local slot = env.words[text]
-  if slot and slot.meaning then
-    return slot.meaning
-  end
-  local lower = text:lower()
-  if lower ~= text then
-    slot = env.words[lower]
-    if slot and slot.meaning then
-      return slot.meaning
+  -- 1) 本地词表（大写词按小写回退）
+  local meaning = dict_data.meaning(env.words, text)
+  if meaning then return meaning end
+  -- 2) 桥刚返回的 AI 译文（每个词只查一次）
+  if env.resp_checked ~= text then
+    env.resp_checked = text
+    local word, got = read_response(env.dir)
+    if word == text and got and got ~= "" then
+      env.resp_word, env.resp_text = word, got
     end
   end
+  if env.resp_word == text then return env.resp_text end
   return nil
-end
-
--- 记录"候选词 -> 完整释义"，供 Ctrl+Enter 把释义上屏用
-local function write_cands(env, items)
-  local f = io.open(env.cands_file, "w")
-  if not f then return end
-  f:write(tostring(os.time()), "\n")
-  for _, item in ipairs(items) do
-    local meaning = item.meaning or meaning_for(env, item.text)
-    if meaning and meaning ~= item.text then
-      f:write(item.text, "\t", meaning, "\n")
-    end
-  end
-  f:close()
-end
-
-local function touch_marquee(env)
-  local f = io.open(env.marquee_flag, "w")
-  if f then
-    f:write(tostring(os.time()))
-    f:close()
-  end
-end
-
--- 词表来自共享模块 en_dict_data.lua（多组件共用一份）
-local dict_data = require("en_dict_data")
-
--- 词表：交给共享模块（内部按词库头部的 #v 版本号判断要不要重读）
-local function refresh(env)
-  env.words = dict_data.load(env.base_path, env.ai_path)
 end
 
 local function back_segment(ctx)
@@ -162,35 +100,18 @@ function M.init(env)
   env.width = tonumber(cfg_str(cfg, "en_ai/width") or "") or 20
   env.step = tonumber(cfg_str(cfg, "en_ai/step") or "") or 2
   env.marquee = (cfg_str(cfg, "en_ai/marquee") or "1") ~= "0"
-  env.marquee_flag = env.dir .. "/marquee.txt"
-  env.scroll_file = env.dir .. "/scroll.txt"
-  env.cands_file = env.dir .. "/cands.tsv"
-  env.auto = (cfg_str(cfg, "en_ai/marquee_auto") or "0") ~= "0"
-  env.offset = 0
-  env.last_input = ""
-  env.loaded = false
-  env.ai_ver = nil
-  env.words = {}
+  env.words = nil
+  env.resp_checked = nil
+  env.resp_word = nil
+  env.resp_text = nil
 end
 
 function M.func(input, env)
   local ctx = env.engine.context
-
-  refresh(env)
-  env.resp_word = nil        -- 本轮重新读一次 response.txt
-  env.resp_text = nil
+  env.words = dict_data.load(env.base_path, env.ai_path)
 
   local input_text = ctx.input or ""
-  local offset, scroll_input = read_scroll(env)
-  if input_text ~= env.last_input or scroll_input ~= input_text then
-    -- 换了词/按了 Tab 之外的变化：从当前偏移继续（Tab 写入的偏移要保留）
-    if scroll_input ~= input_text then
-      offset = 0
-      write_scroll(env, 0, input_text)
-    end
-    env.last_input = input_text
-  end
-  env.offset = offset
+  state.clear_meanings()
 
   -- 先把候选分流：单词留下，释义丢掉（释义拿去当注释）
   local words, seen_exact, dropped_meaning = {}, false, nil
@@ -200,11 +121,11 @@ function M.func(input, env)
       if text == input_text then seen_exact = true end
       words[#words + 1] = { cand = cand, text = text }
     elseif not dropped_meaning then
-      dropped_meaning = text                    -- AI 候选等：留作兜底释义
+      dropped_meaning = text
     end
   end
 
-  -- 词库（含 AI 补录）里都没有这个词时，补一个"单词"候选，保证空格上单词
+  -- 词库里都没有这个词（只有 AI 结果）→ 补一个单词候选，保证空格上单词
   if not seen_exact and input_text:match(WORD_RE) then
     local meaning = meaning_for(env, input_text) or dropped_meaning
     if meaning then
@@ -216,30 +137,19 @@ function M.func(input, env)
     end
   end
 
-  -- 输出：释义贴到 comment，过长则跑马灯
-  local long_comment = false
+  -- 输出：释义贴到 comment，过长则按窗口滚动
+  local offset = state.offset_of(input_text)
   for _, item in ipairs(words) do
-    local slot = env.words[item.text]
-    local meaning = item.meaning or (slot and slot.meaning)
+    local meaning = item.meaning or meaning_for(env, item.text)
     if meaning and meaning ~= item.text then
+      state.set_meaning(item.text, meaning)          -- 完整释义存内存，给 Ctrl+Enter
       if env.marquee and (utf8.len(meaning) or #meaning) > env.width then
-        long_comment = true
-        item.cand.comment = scroll(meaning, env.width, env.offset)
+        item.cand.comment = scroll(meaning, env.width, offset)
       else
         item.cand.comment = meaning
       end
     end
     yield(item.cand)
-  end
-
-  write_cands(env, words)
-
-  if long_comment then
-    write_scroll(env, env.offset, input_text)
-    if env.auto then                      -- 可选：桥注入 F24 自动滚
-      env.offset = env.offset + (env.step or 1)
-      touch_marquee(env)
-    end
   end
 end
 
