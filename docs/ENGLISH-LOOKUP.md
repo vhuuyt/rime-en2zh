@@ -37,11 +37,15 @@ switches:
     states: [ 自动空格开, 自动空格关 ]
 ```
 ```yaml
-# default.custom.yaml
+# default.custom.yaml —— 必须用 /+ 追加
 patch:
-  switcher/save_options:
+  switcher/save_options/+:
     - no_auto_space              # 存进 user.yaml，重启后仍然生效
 ```
+
+> 直接写 `switcher/save_options:` 会**整表替换**掉 default.yaml 里的
+> `full_shape / ascii_punct / simplification / extended_charset / zh_*`，
+> 于是 `simplification` 不再从 `user.yaml` 恢复 → 中文默认变繁体。
 
 F4 菜单里显示成「自动空格开 → 自动空格关」，选中即切；`en_space.lua` 每次按键
 读一遍这个 option，**改完立刻生效**，不用重新部署。
@@ -140,7 +144,6 @@ patch:
 > 早期是在 `mode_switch.lua` 里切方案前后手动 `set_option`，虽然也能用，但
 > 只覆盖 Shift 切换这一条路 —— 用 F4 菜单切方案就不会走那段 Lua。写在
 > `switches/reset` 里是全部切换路径统一生效（会话启动、F4 菜单、Lua apply_schema）。
-> 回归测试见 `tests/test_punct_switch.lua`。
 
 实现：`lua/mode_switch.lua`（processor，放在 processors 第一位）。
 它在 Shift「松开」时判断「这期间有没有按过别的键」——没有才算单击，

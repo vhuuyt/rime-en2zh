@@ -144,9 +144,7 @@ function M.func(key, env)
   -- 基库（ECDICT）的词不动，原样放行给应用
   if (repr == env.delete_key or repr == env.delete_key_alt) and ctx:is_composing() then
     local cand = ctx:get_selected_candidate()
-    -- 候选可能带尾随空格（en_space filter 补的），查表前先 trim
-    local raw = cand and cand.text or nil
-    local word = raw and (raw:gsub("%s+$", "")) or nil
+    local word = cand and cand.text or nil
     if word and word:match("^[%a][%a'%-]*$") and delete_from_ai_dict(env.ai_dict, word) then
       if env.delete_close then
         ctx:clear()                 -- 直接收起候选框，回到空闲状态（就是"删掉收工"的手感）
@@ -161,9 +159,7 @@ function M.func(key, env)
   -- Ctrl+Enter = 把当前高亮候选的释义上屏（联想模式下释义只在 comment 里）
   if repr == env.commit_key and ctx:is_composing() then
     local cand = ctx:get_selected_candidate()
-    -- 候选可能带尾随空格（en_space filter 补的），cands.tsv 里记的是干净词
-    local raw = cand and cand.text or nil
-    local word = raw and (raw:gsub("%s+$", "")) or nil
+    local word = cand and cand.text or nil
     if word then
       local f = io.open(env.cands_file, "r")
       if f then

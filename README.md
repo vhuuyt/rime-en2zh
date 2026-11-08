@@ -109,7 +109,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 ├── docs/
 │   ├── ENGLISH-LOOKUP.md        英文模式细则（候选、键位、AI 链路）
 │   └── MULTI-DEVICE.md          多端同步（Windows/macOS/Linux、Rime 同步 vs git）
-└── tests/                       八个回归测试（Lua + 配置级，不需要输入法就能跑）
+└── tests/                       六个 Lua 回归测试（不需要输入法就能跑）
 ```
 
 运行时目录（不在这里，别手改）：`%TEMP%\rime_en_ai\`（请求文件、缓存、日志）

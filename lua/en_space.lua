@@ -3,23 +3,16 @@
 -- 选词上屏时自动补一个尾随空格：打 hello 按空格 → 上屏 "hello "，
 -- 接着打下一个词不会粘成 "helloworld"，不用再补一次空格。
 --
--- 为什么不用 filter 改 cand.text？
---   librime-lua 的 CandidateSet::set_text 只对 SimpleCandidate 生效：
---       void set_text(T &c, const string &v) {
---         if (auto p = dynamic_cast<SimpleCandidate *>(&c)) p->set_text(v);
---       }
---   而词库（table_translator）给出的候选是 Phrase，赋值会被**静默忽略**，
---   所以「挂个 filter 给 cand.text 加空格」看着部署成功、实际什么都没改。
---   （cand.comment 不同：set_comment 同时处理 Phrase 和 SimpleCandidate，
---     所以释义能正常贴到候选尾巴上。）
---
--- 这里改在**提交那一刻**处理：拿当前高亮候选的文本，自己 commit，然后吃掉按键。
+-- 为什么不用 filter 改 cand.text：librime-lua 的 CandidateSet::set_text 只对
+-- SimpleCandidate 生效（`if (auto p = dynamic_cast<SimpleCandidate *>(&c))`），
+-- 而词库候选是 Phrase，赋值会被静默忽略。所以这里在**提交那一刻**处理：
+-- 拿当前高亮候选的文本，自己 commit，然后吃掉按键。
 --
 -- 开关（两级）：
---   * F4 选单里的「自动空格」开关 —— schema switches 里的 no_auto_space
---     （反向命名，见该文件注释：不写 reset 才能记住）。关掉后选词不再补空格。
---   * en_ai/auto_space: 0    —— yaml 里的总开关，彻底关（F4 开关也不起作用）。
---   en_ai/auto_space_keys    触发补空格的键（默认 "space,Return"）
+--   * F4 选单里的「自动空格」（schema switches 的 no_auto_space，反向命名 ——
+--     见 english.schema.yaml：不写 reset 才能记住）：关掉后选词不再补空格
+--   * en_ai/auto_space: 0     yaml 里的总开关，彻底关（F4 开关也不起作用）
+--   * en_ai/auto_space_keys   触发补空格的键（默认 "space,Return"）
 --
 -- 挂载：english.schema.yaml → engine/processors 的 lua_processor@*en_space
 
