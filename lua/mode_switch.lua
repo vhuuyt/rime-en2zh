@@ -1,8 +1,12 @@
 -- lua/mode_switch.lua        【三方案通用】processor（必须放在 processors 第一位）
 --
--- Shift 单击切换方案：
+-- 左 Shift 单击切换方案：
 --   中文（双拼 / 朙月）→ english（带释义的英文查词）
 --   english           → 切回刚才那个中文方案
+--
+-- 右 Shift 单击保留 Rime 原生手感：中文 ⇄ 西文（只切 ascii_mode，不切方案）。
+-- 在英文模式里右 Shift 等同于左 Shift（切回中文方案）—— 英文模式本来就是英文，
+-- 再切「西文」没意义。
 --
 -- 判定沿用 Rime 原生「单击 Shift 切西文」的手感：
 --   按下 Shift 记一笔；这期间按了别的键 → 算「按住 Shift 打字」，不切换；
@@ -41,6 +45,21 @@ local function is_shift_key(key, repr)
   return repr:match("Shift_L$") ~= nil or repr:match("Shift_R$") ~= nil
 end
 
+local function is_right_shift(key, repr)
+  if key.keycode == XK_SHIFT_R then
+    return true
+  end
+  return repr:match("Shift_R$") ~= nil
+end
+
+-- 右 Shift 的行为：中文 ⇄ 西文（Rime 原生的 ascii_mode 切换）
+local function toggle_ascii_mode(ctx)
+  if ctx:is_composing() then
+    ctx:clear()          -- 有未上屏的码先丢掉，和按 Esc 一样，再切模式
+  end
+  ctx:set_option("ascii_mode", not ctx:get_option("ascii_mode"))
+end
+
 function M.init(env)
   env.shift_down = false
   env.typed = false
@@ -61,6 +80,11 @@ function M.func(key, env)
 
       local ctx = env.engine.context
       local cur = current_schema(env)
+      if is_right_shift(key, repr) and cur ~= ENGLISH then
+        -- 右 Shift：中文 ⇄ 西文（不切方案）
+        toggle_ascii_mode(ctx)
+        return 1
+      end
       if cur == ENGLISH then
         local back = ctx:get_property(PROP)
         if back == nil or back == "" or back == ENGLISH then
