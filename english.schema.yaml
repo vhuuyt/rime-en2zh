@@ -57,6 +57,7 @@ engine:
     - punct_translator
   filters:
     - lua_filter@*en_assoc            # 联想模式：释义进 comment、丢掉释义行
+    - lua_filter@*en_space            # 选词后自动补尾随空格（英文连打用）
     - uniquifier
 
 speller:
@@ -110,3 +111,4 @@ en_ai:
   width: 12            # 滚动窗口宽度（字符数，一个汉字算 1）；释义超过它才滚
   step: 1              # 每次重绘前进几个字符
   min_input_len: 2     # 太短的词不查
+  auto_space: 1        # 选词上屏时自动补一个尾随空格（0 = 不补）

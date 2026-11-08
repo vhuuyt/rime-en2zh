@@ -10,11 +10,26 @@
 | `dicts/ai_ecdict.dict.yaml` | AI 补录（**唯一可删的**：`Ctrl+Delete` 只动它） |
 | `lua/en_ai_request.lua` | processor：每次输入变化把单词写进 `request.txt`；收到 `F24` 时重绘候选 |
 | `lua/en_ai_candidate.lua` | translator：读 `response.txt`，命中就补一条 `[AI]` 候选（带缓存） |
+| `lua/en_space.lua` | filter：给英文单词候选补尾随空格（选词后直接接下一个词） |
 | `scripts/ecdict2dict.py` | ECDICT csv → 词库 |
 | `scripts/ai_bridge.py` | 桥接进程：监听请求文件的**静默期**，到点调 API，写回结果并注入 F24 |
 | `test_en_ai.lua` | 上面两个 lua 的离线回归测试 |
 
 候选顺序：**英文原词 → 本地释义（可选中插入中文）→ `[AI]` 摘要**。本地命中 ID 时不会发网络请求。
+
+## 选词后自动补空格
+
+在英文模式里用空格（或回车）选词，上屏的是 `"hello "` —— **末尾带一个空格**，
+接着打下一个词不会粘成 `helloworld`，不用再补一次空格。
+
+实现：`lua/en_space.lua`（filter，挂在 `en_assoc` 后面）。
+它只给**纯英文单词**候选（`^[%a][%a'%-]*$`）补空格；中文释义、标点不动。
+
+开关：`english.schema.yaml` → `en_ai/auto_space`（`1` = 补，`0` = 不补，默认 `1`）。
+
+> 候选文本多了尾随空格，所以凡是拿 `cand.text` 去查表的地方都要先 trim：
+> `en_ai_request.lua` 里的 `Ctrl+Enter`（查 `cands.tsv` 拿释义）和
+> `Ctrl+Delete`（删 AI 词）都已经 trim 过。
 
 ## 怎么进来的：Shift 单击
 

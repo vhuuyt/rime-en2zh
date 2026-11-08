@@ -93,7 +93,8 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 │   ├── en_ai_request.lua        英文：按键处理（Tab / Ctrl+Enter / Ctrl+Delete / 档位同步）
 │   ├── en_ai_candidate.lua      英文：大写词按小写回退补候选
 │   ├── en_dict_data.lua         英文：词表共享模块（多组件共用一份）
-│   └── en_assoc.lua             英文：候选改造（释义贴尾部、滚动、补单词候选）
+│   ├── en_assoc.lua             英文：候选改造（释义贴尾部、滚动、补单词候选）
+│   └── en_space.lua             英文：选词后自动补尾随空格（连打不粘词）
 ├── scripts/                     需要计时器/网络/进程的部分（Python，标准库）
 │   ├── ai_bridge.py             大模型桥（常驻）：计时、调 API、写词库、热重载
 │   ├── ecdict2dict.py           ECDICT csv → 词库（含化学词库、时态变形）
@@ -102,7 +103,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 ├── docs/
 │   ├── ENGLISH-LOOKUP.md        英文模式细则（候选、键位、AI 链路）
 │   └── MULTI-DEVICE.md          多端同步（Windows/macOS/Linux、Rime 同步 vs git）
-└── tests/                       五个 Lua 回归测试（不需要输入法就能跑）
+└── tests/                       七个 Lua 回归测试（不需要输入法就能跑）
 ```
 
 运行时目录（不在这里，别手改）：`%TEMP%\rime_en_ai\`（请求文件、缓存、日志）
@@ -126,7 +127,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 | 键 | 作用 |
 |---|---|
 | 打字 | 候选：单词（带释义）+ 前缀联想的其它单词 |
-| **空格 / 回车** | 上屏英文单词 |
+| **空格 / 回车** | 上屏英文单词（**自动带一个尾随空格**，接着打下一个词不会粘在一起） |
 | **`Ctrl+Enter`** | 上屏当前高亮候选的**释义**（中文） |
 | **`Ctrl+Delete`** | 删掉这个 AI 补录的词（基库词不受影响），删完候选框收起 |
 | **`Tab`** | 释义超过窗口宽度时往前滚（每次 4 字，可调） |
