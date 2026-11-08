@@ -72,7 +72,7 @@ else
   echo "    = 保留你现有的 squirrel.custom.yaml"
 fi
 
-chmod +x "$RIME/scripts/"*.py 2>/dev/null || true
+chmod +x "$RIME/scripts/"*.py "$RIME/tests/run.sh" 2>/dev/null || true
 
 echo "==> 自检：english.schema.yaml 里 en_space 必须在 processors"
 if grep -q 'lua_processor@\*en_space' "$RIME/english.schema.yaml"; then

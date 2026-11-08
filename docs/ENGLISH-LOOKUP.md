@@ -1,452 +1,168 @@
-# 英文模式（本地 ECDICT + 自定义大模型 API）
+# 英文模式：原理与细则
+
+本文讲「打英文 → 出单词 + 中文释义 → 按 Tab 让大模型兜底」这条链路是怎么实现的。
+装和用看 [README](../README.md)，多端同步看 [MULTI-DEVICE](MULTI-DEVICE.md)。
 
 ## 组成
 
-| 文件 | 作用 |
+| 位置 | 角色 |
 |---|---|
-| `english.schema.yaml` | 独立方案：`speller/alphabet` 只有 a–z、`'`、`-`，**没有双拼 algebra**，所以英文码不会被中文方案改写 |
-| `dicts/ecdict.dict.yaml` | **基础词库 1/2**：4 万高频词 + 时态/复数/比较级变形，由 `scripts/ecdict2dict.py` 从 ECDICT 生成 |
-| `dicts/chem_ecdict.dict.yaml` | **基础词库 2/2 · 化学**：ECDICT 里 1.6 万条 `[化]` 词条 + 一批实验常用词（`titrate`/`esterify`…），通过 `ecdict.dict.yaml` 的 `import_tables` 合并进来 |
-| `dicts/ai_ecdict.dict.yaml` | AI 补录（**唯一可删的**：`Ctrl+Delete` 只动它） |
-| `lua/en_ai_request.lua` | processor：每次输入变化把单词写进 `request.txt`；收到 `F24` 时重绘候选 |
-| `lua/en_ai_candidate.lua` | translator：读 `response.txt`，命中就补一条 `[AI]` 候选（带缓存） |
-| `lua/en_space.lua` | processor：选词上屏时给英文单词补尾随空格 |
-| `scripts/ecdict2dict.py` | ECDICT csv → 词库 |
-| `scripts/ai_bridge.py` | 桥接进程：监听请求文件的**静默期**，到点调 API，写回结果并注入 F24 |
-| `test_en_ai.lua` | 上面两个 lua 的离线回归测试 |
+| `english.schema.yaml` | 独立方案。processors 里挂 4 个 lua，translators 里挂 `table_translator`，filters 里挂 `en_assoc` |
+| `dicts/ecdict.dict.yaml`<br>`dicts/chem_ecdict.dict.yaml` | 主词库（Rime 码表格式，单词行权重 10、释义行权重 0） |
+| `dicts/ai_ecdict.dict.yaml` | AI 补录的小词库（桥自动写，带 `#v` 版本号） |
+| `lua/en_assoc.lua` | **filter**：把释义搬到单词候选右边、跑马灯滚动、必要时补一条单词候选 |
+| `lua/en_ai_request.lua` | **processor**：Tab / Ctrl+Enter / Ctrl+Delete / 档位同步 |
+| `lua/en_space.lua` | **processor**：选词上屏时补尾随空格 |
+| `lua/en_state.lua` | **共享内存**：滚动偏移、完整释义（让按键路径不必读写文件） |
+| `scripts/ai_bridge.py` | **常驻桥**：轮询请求文件 → 调 API → 写回词库 + 触发重绘 |
 
-候选顺序：**英文原词 → 本地释义（可选中插入中文）→ `[AI]` 摘要**。本地命中 ID 时不会发网络请求。
+---
 
-## 选词后自动补空格
-
-在英文模式里用空格（或回车）选词，上屏的是 `"hello "` —— **末尾带一个空格**，
-接着打下一个词不会粘成 `helloworld`，不用再补一次空格。
-
-实现：`lua/en_space.lua`，一个 **processor**（不是 filter），它只看空格 / 回车：
-拿到当前高亮候选的文本 → `engine:commit_text(text .. " ")` → 吃掉这个按键。
-只对**纯英文单词**（`^[%a][%a'%-]*$`）生效；中文释义、标点、Typst 片段照旧走 Rime 自己。
-
-### 两个开关
-
-**① F4 选单里的「自动空格」（随时切，会记住）**
-
-```yaml
-# english.schema.yaml
-switches:
-  - name: no_auto_space          # 反向命名，见下面第 2 点
-    states: [ 自动空格开, 自动空格关 ]
-```
-```yaml
-# default.custom.yaml —— 必须用 /+ 追加
-patch:
-  switcher/save_options/+:
-    - no_auto_space              # 存进 user.yaml，重启后仍然生效
-```
-
-> 直接写 `switcher/save_options:` 会**整表替换**掉 default.yaml 里的
-> `full_shape / ascii_punct / simplification / extended_charset / zh_*`，
-> 于是 `simplification` 不再从 `user.yaml` 恢复 → 中文默认变繁体。
-
-F4 菜单里显示成「自动空格开 → 自动空格关」，选中即切；`en_space.lua` 每次按键
-读一遍这个 option，**改完立刻生效**，不用重新部署。
-
-两个关键细节：
-
-1. **菜单里只显示带 `states` 的 switch** —— `switch_translator.cc` 里
-   `if (!has_state_label(option, 0)) return kContinue;`。所以 `ascii_mode` /
-   `ascii_punct` 没写 `states` 就不会出现在菜单（故意的）。
-
-2. **这个开关故意不写 `reset`**，而且是反向命名（`no_auto_space`）。原因在
-   `ConcreteEngine`：
-
-   ```cpp
-   ConcreteEngine::ConcreteEngine() {
-     switcher_->RestoreSavedOptions();   // ① 先读 user.yaml 里存的开关
-     InitializeComponents();
-     InitializeOptions();                // ② 再按 switches[].reset 覆盖一遍
-   }
-   ```
-   `ApplySchema`（切方案）也会再跑一次 ②。所以**带 `reset` 的开关每次切方案都会
-   被重置回默认值** —— 在 F4 里关掉、Shift 切个方案就自己开回来了，也存不住。
-   不写 `reset` 时 `reset_value = -1`，`InitializeOptions` 跳过它，值才能留住；
-   代价是 option 未设时的默认值是 false，所以把语义反过来：
-   `no_auto_space` 为 false = 自动空格**开**（这正好是默认值）。
-
-**② yaml 里的总开关（永久）**
-
-```yaml
-en_ai:
-  auto_space: 0                 # 0 = 彻底关（F4 那个开关也不起作用），默认 1
-  auto_space_keys: space,Return # 哪些键触发（逗号分隔）
-```
-
-> ### 为什么不能用 filter 改 `cand.text`（踩过的坑）
->
-> 最初写的是 filter：`cand.text = cand.text .. " "`。部署成功、候选也正常显示，
-> 但**提交出来没有空格**。原因在 librime-lua 的 `CandidateSet::set_text`：
->
-> ```cpp
-> void set_text(T &c, const string &v) {
->   if (auto p = dynamic_cast<SimpleCandidate *>(&c)) p->set_text(v);   // 只处理 SimpleCandidate
-> }
-> ```
->
-> 词库（`table_translator`）给出的候选是 `Phrase`，不是 `SimpleCandidate`，
-> 所以赋值被**静默忽略**（不报错、不警告）。而 `set_comment` 同时处理
-> `Phrase` 和 `SimpleCandidate`，所以「释义贴到候选尾巴」一直正常 —— 两个属性行为不一样，
-> 很容易误判成「filter 生效了」。
->
-> 要改候选文本得用 `cand:to_shadow_candidate(type, text, comment, inherit_comment)`
-> 包一层 ShadowCandidate；但那样还要兼顾各版 librime-lua 的可用性，
-> 不如直接在提交时刻自己 `commit_text` 来得确定。
-
-## 怎么进来的：Shift 单击
-
-左右 Shift 分工不同：
-
-| 键 | 作用 |
-|---|---|
-| **左 Shift**（单击） | 中文 ⇄ **英文模式**（切方案，带释义的查词） |
-| **右 Shift**（单击） | 中文 ⇄ **西文**（只切 `ascii_mode`，不切方案 —— Rime 原生手感）；可用 `en_ai/shift_right: schema` 改成等同左 Shift |
-
-* 在**中文方案**（双拼 / 朙月）里**单击左 Shift** → 切到「英文模式」；
-* 在**英文模式**里**单击左（或右）Shift** → 切回刚才那个中文方案；
-* 在任何方案里**单击右 Shift**：中文方案内切换 `ascii_mode`（直接敲西文），
-  英文模式里等同左 Shift；
-* **右 Shift 切换时会丢掉未上屏的码**（等同于按 Esc）—— 不像左 Shift 那样
-  先把码上屏；切模式就是切模式，不夹带上屏动作；
-* 右 Shift 的行为可配：
-
-  ```yaml
-  # double_pinyin_mspy.custom.yaml / luna_pinyin.custom.yaml / english.schema.yaml
-  en_ai/shift_right: ascii    # 默认：中文 ⇄ 西文
-  # en_ai/shift_right: schema # 等同左 Shift，切方案
-  ```
-
-  macOS 上 Caps Lock 一般已经绑了「切换输入法」，这时右 Shift 的「西文」多了一层，
-  可以把它改成 `schema`；那份 `*.custom.yaml` 是 git 共享的，机器本地差异可以直接
-  改自己机器上的那份（或在 `.gitignore` 里排除）；
-
-* **按住 Shift 打字不受影响**（Shift+a 依然是大写 A），判定方式和 Rime 原生的「单击 Shift 切西文」一致；
-* 英文模式里要打大写字母用 **Caps Lock**（Shift 已经被用来切方案了）。
-
-### 切换时的标点：用 switches 的 reset 就够（不要写 Lua）
-
-`Context` 的 option 是**会话级**的，但 `apply_schema()` 会按 schema 的
-`switches[].reset` 重新设一遍 —— `ConcreteEngine::ApplySchema` →
-`InitializeOptions()` → `Switches::FindOption()`：
-
-```cpp
-inline static int reset_value(ConfigItemRef& item) {
-  auto reset = item["reset"];
-  return reset.IsValue() ? reset.ToInt() : -1;      // 没写 reset = -1 = 不动
-}
-...
-if (option.reset_value >= 0)
-  context_->set_option(option.option_name, (option.reset_value != 0));
-```
-
-所以英文方案 `ascii_punct: reset 1` 切过去是 ASCII 标点，而**中文方案只要也写
-`reset: 0`，切回来就自动回中文标点**：
-
-```yaml
-switches:
-  - name: ascii_punct
-    reset: 0                 # ← 关键。不写就是 -1，会留着英文那边的 1
-    states: [ 。，, ．， ]
-```
-
-朙月拼音的 `switches` 在发行版自带的基础方案里，用补丁改：
-
-```yaml
-# luna_pinyin.custom.yaml
-patch:
-  switches/@3/reset: 0       # ascii_mode=0 / full_shape=1 / simplification=2 / ascii_punct=3
-```
-
-> 早期是在 `mode_switch.lua` 里切方案前后手动 `set_option`，虽然也能用，但
-> 只覆盖 Shift 切换这一条路 —— 用 F4 菜单切方案就不会走那段 Lua。写在
-> `switches/reset` 里是全部切换路径统一生效（会话启动、F4 菜单、Lua apply_schema）。
-
-实现：`lua/mode_switch.lua`（processor，放在 processors 第一位）。
-它在 Shift「松开」时判断「这期间有没有按过别的键」——没有才算单击，
-切换用 `engine:apply_schema(Schema(...))`（librime-lua 提供的能力）。
-
-## 候选长什么样
-
-只有一种显示方式（原来的"查词/联想"两套已经合并）：
+## 数据流
 
 ```
-打 hello →
-  hello          interj. 喂；嘿        ← 空格上屏单词
-  help           v. 帮助；有助于        ← 联想词，各自带释义
-  held           v. 握住；举行
-打 information（释义 21 字，超过窗口 12 字）→
-  information    n. 消息；知识；通…      ← 按 Tab 滚动看全
+按键 ─→ speller/table_translator 从码表取：
+        info   info   10      ← 单词行（权重 10 → quality≈22026）
+        n. 信息；资料  info   0       ← 释义行（权重 0 → quality≈1）
+                              ↓
+        filter: en_assoc 认出「单词行 + 紧跟的释义行」：
+          释义 → 单词候选的 comment（超宽则按 width 截窗口滚动）
+          释义行 → 丢弃
+          完整释义 → en_state.set_meaning(word, text)
+                              ↓
+        候选栏： 1. info  n. 信息；资料
+                              ↓
+        空格/回车 → en_space 补尾随空格后上屏单词
+        Ctrl+Enter → en_ai_request 从 en_state 取完整释义上屏
+        Tab       → 见下
 ```
 
-| 键 | 作用 |
-|---|---|
-| 空格 / 回车 | 上屏英文单词 |
-| `Ctrl+Enter` | 上屏**当前高亮候选的释义**（就是尾部那串中文） |
-| `Ctrl+Delete` | 删掉这个 AI 补录的词（基库 ECDICT 的词不受影响），删完候选框收起 |
-| `Tab` | 释义超宽时往前滚 4 个字 |
-| `Ctrl+Shift+A` | AI 开关 |
-| `F4` / `Ctrl+Shift+E` / `` Ctrl+` `` | 方案选单 |
+**这里没有任何查表动作**：`en_assoc` 靠的是"释义行就排在单词行后面"这个布局，权重（quality）只是用来区分两者的辅助线索。所以输入路径上不需要把 7 万词的词表读进 Lua —— 这正是英文模式首次按键不掉帧的原因。
 
-## 使用
+### Tab 的三个分支
 
-```text
-F4（或 `Ctrl+Shift+E` / `` Ctrl+` ``）选「英文模式」
-输入 comp  → computer / complete / company …（注释里显示 ~uter 这样的剩余字母提示）
-输入 hello → hello（英文原词） / interj. 喂, 嘿 …
-停手 900ms → 多出一条 [AI] 候选
-Ctrl+Shift+A 开关 AI
-```
+`lua/en_ai_request.lua` 里按顺序判断：
 
-## 两层词库（AI 的单独放一个文件）
+1. **释义比窗口宽**（`utf8.len(meaning) > en_ai/width`）→ `en_state.bump(word, tab_step)`，重绘，吃掉 Tab。每按一次向右滚 4 个字（`tab_step`）。
+2. **有短释义** → 无事可做，放行给应用（所以在英文模式里 Tab 依然是普通的 Tab）。
+3. **本地没有这个词的释义** → 写一次请求文件让桥问 AI（`delay = 0`，立刻发），吃掉 Tab。词长短于 `min_input_len`（默认 2）不发。
 
-| 文件 | 内容 | 谁写 |
+早期版本是"停手 900ms 自动发请求"，那要求每次按键都写一次请求文件；现在只有分支 3 会写盘。
+
+---
+
+## 请求/应答文件协议
+
+目录：`%TEMP%\rime_en_ai\`（macOS/Linux 是 `$TMPDIR/rime_en_ai`）
+
+| 文件 | 谁写 | 内容 |
 |---|---|---|
-| `ecdict.dict.yaml` | ECDICT 基库，2 万高频词 | `scripts/ecdict2dict.py` 生成，别手改 |
-| `ai_ecdict.dict.yaml` | **只有 AI 补录的词**，一眼能看完 | `scripts/import_saved.py` 追加 |
-| `<tmp>\rime_en_ai\*.txt/tsv` | 运行时状态：请求、响应、滚动偏移、候选释义表 | 桥和 lua 自己维护，别手改 |
+| `request.txt` | lua（Tab） | 第 1 行单词、第 2 行停顿毫秒（Tab 固定 `0`）、第 3 行时间戳 |
+| `response.txt` | 桥 | 第 1 行单词、其余是释义（filter 在"本地没有候选"时读它） |
+| `ai_ecdict.dict.yaml` | 桥 | 追加 `释义<TAB>单词<TAB>0`，并把 `#v` 抬到当前时间戳 |
+| `ai_profile.txt` | lua | F4 里选中的 AI 档位（桥据此切换 `active`） |
+| `cache.json` | 桥 | 已查过词的完整结果（zh/pos/cap），避免重复付费 |
+| `bridge.log` | 桥 | 日志（超过 1MB 轮转） |
 
-合库靠 rime 的 `packs`，部署时会把 `ai_ecdict` 编译成附加表跟基库一起查：
+桥每 50ms 轮询一次 `request.txt`，所以「按 Tab → 候选出现」的固定延迟约 50ms，其余是 API 时间。
 
-```yaml
-translator:
-  dictionary: ecdict
-  packs:
-    - ai_ecdict
-```
+拿到结果后桥做三件事：写 `response.txt`、追加 AI 词库（带新 `#v`）、**注入一次 F24**（lua 收到就重绘候选，所以不用你再敲键）。filter 读到 AI 词库的新 `#v` 才重读那个小文件（≤1 次/秒）。
 
-部署日志里能看到 `rebuilding pack 'ai_ecdict'`，产物是 `build/ai_ecdict.table.bin`。
-AI 补录过的词也会被桥当成"本地已有"，不再花钱问 API。
+省钱的四道闸（都在桥里，顺序执行）：
 
-### 三个词库的分工
+1. 这个词已在 `ai_ecdict.dict.yaml` → 直接回放，不联网
+2. 这个词在本地主词库里有释义（`skip_local`）→ 跳过
+3. `cache.json` 里已有 → 回放
+4. 都没有才调 API
 
-| 词库 | 内容 | 能不能删 |
+---
+
+## 键位对照（英文模式）
+
+| 键 | 行为 | 实现 |
 |---|---|---|
-| `dicts/ecdict.dict.yaml` | 4 万高频词 + 变形（`ran`/`bigger`/`titrated`…） | 不能（重新生成即可） |
-| `dicts/chem_ecdict.dict.yaml` | 化学专用：1.6 万条 `[化]` 词条 + 实验常用词 | 不能（同上） |
-| `dicts/ai_ecdict.dict.yaml` | AI 补录 | **能**，`Ctrl+Delete` 只删这个 |
+| 空格 / 回车 | 上屏单词 + 一个尾随空格 | `en_space.lua`（F4 里 `no_auto_space` 可关；`en_ai/auto_space: 0` 彻底关） |
+| `Ctrl+Enter` | 上屏完整中文释义 | `en_ai_request.lua`（`en_ai/commit_key`） |
+| `Ctrl+Delete` | 删掉当前 AI 补录词，收起候选框 | `en_ai_request.lua`（`en_ai/delete_key`；macOS 备选 `delete_key_alt`） |
+| `Tab` | 滚动 / 放行 / 问 AI | `en_ai_request.lua`（`en_ai/tab`、`tab_step`、`width`） |
+| 左 `Shift` 单击 | 中文 ⇄ 英文模式（切方案） | `mode_switch.lua` |
+| 右 `Shift` 单击 | 中文 ⇄ 西文（只切 `ascii_mode`） | `mode_switch.lua`（`en_ai/shift_right: schema` 可改成切方案） |
+| `F4` | 选单：自动空格、AI 档位、AI 开关 | schema 的 `switches` |
 
-重新生成（会同时更新化学词库、时态变形）：
+`Shift` 单击的实现要点：只有"按下又松开、中间没敲别的键"才算单击；松开事件被吃掉，`ascii_composer` 收不到就不会顺手把 `ascii_mode` 也切了。所以按住 Shift 打大写完全不受影响。
+
+`Ctrl+Enter` / `Ctrl+Delete` 里没有 `Ctrl+Shift+A` 之类的 AI 快捷键 —— AI 开关只在 F4 选单里点，避免误触。
+
+---
+
+## 词库怎么生成
 
 ```powershell
-python scripts\ecdict2dict.py --csv ...\ecdict.csv --out dicts\ecdict.dict.yaml --chem-out dicts\chem_ecdict.dict.yaml --limit 40000
+python scripts\ecdict2dict.py --csv C:\path\to\ecdict.csv `
+    --out dicts\ecdict.dict.yaml --chem-out dicts\chem_ecdict.dict.yaml --limit 40000
 ```
 
-桥看到 `*.dict.yaml` 变了会自动重新部署（`ai_ecdict.dict.yaml` 除外，那个是桥自己写的）。
+* `--limit` 控制收多少高频词（40000 约 6MB）；`--max-meanings` 控制一个词保留几条释义
+* 时态/复数/比较级等变形会一起生成（ECDICT 的 `exchange` 列），释义带「（xx 的变形）」提示
+* `[化]` 标记的词条 + 内置的化学常用词表进 `chem_ecdict.dict.yaml`
+* 文件头写 `#v<时间戳>`，桥和 lua 都靠它判断"要不要重读"
 
-### AI 词库：全自动写入，不用脚本也不用部署
+**大小写**：Rime 的码表查询是精确匹配（`Dictionary::LookupWords` → `prism_->GetValue`），
+词库里只有 `hello`，所以打 `Hello` 没有本地释义（会走 AI 兜底）。这是当前**有意保留**的行为；
+要改就在 `ecdict2dict.py` 里顺手生成首字母大写变体，代价是词库约翻倍。
 
-```
-英文模式打词 → 桥调 API → 立刻写进 ai_ecdict.dict.yaml（带 #v<时间戳> 版本标记）
-                          ↓
-              lua/en_ai_candidate.lua 发现版本变了就重读 → 候选里马上能查到
-```
+---
 
-- 是**同一个文件**既给人看、又给输入法查，没有中间缓冲、没有合并脚本、不需要重新部署。
-- 想删某个 AI 词：直接删掉那几行（`#v` 那行别动，或让桥下次自动重写）。
-- 桥下一次查同一个词时，会先在 `ai_ecdict.dict.yaml` 里命中 → 直接回放，不再花钱。
-- `ecdict.dict.yaml`（ECDICT 基库）永远不被 AI 改动。
+## 界面
 
-每个词写入 2~4 行（`cap=1` 才有大写版本）：
+竖排候选（`weasel.custom.yaml` 的 `style/horizontal: false`）下每条候选一行，释义跟在同一行右侧。
+长释义不换行，而是按 `en_ai/width`（默认 12 字）开一个窗口滚动显示，按 Tab 前进。
 
-```
-typst                                  typst   10
-n. 一种基于 Rust 的现代排版系统与标记语言   typst   0
-Typst                                  Typst   10
-n. 一种基于 Rust 的现代排版系统与标记语言   Typst   0
-```
+不要用横排：Weasel 的横排布局只有 `max_width > 0` 才换行，而它默认是 0
+（`WeaselIPCData.h` 里 `max_width(0)`），一条长释义配五条候选会排成一条超出屏幕的行。
 
-查看两个库里有没有某个词：
+## 为什么非要一个常驻进程
+
+Rime 的 Lua 组件不能联网、不能起定时器、也不能可靠重启输入法进程。所以：
+
+* lua 负责"当场的判断"（哪个键、要不要滚、要不要请求）
+* Python 桥负责"慢的、脏的"（HTTP、超时重试、写文件、重新部署、重启输入法、开机自启）
+
+桥是纯增量：不跑它，本地词库和释义全都正常，只是生僻词没有 AI 释义。
+
+## 改完怎么生效
+
+| 改了什么 | 生效方式 |
+|---|---|
+| `lua/*.lua` | **重启输入法进程**（不是部署！librime-lua 每个引擎会话只 require 一次）。桥盯着文件会自动重启 |
+| `*.schema.yaml` / `*.custom.yaml` | 重新部署。桥会自动做 |
+| `*.dict.yaml` | 重新部署（AI 词库不用，桥靠 `#v` + F24 让 filter 就地重读） |
+| `ai_config.json` | 桥 1 秒内自动重读；档位列表变了会顺带更新 F4 选单并部署 |
+
+手动部署（桥没跑时）：
 
 ```powershell
-python scripts\lookup.py typst hello
+& 'C:\Program Files\Rime\weasel-0.17.4\WeaselDeployer.exe' '/deploy'
 ```
 
-## 词库怎么改
+## 排错
 
-```bash
-python3 scripts/ecdict2dict.py --csv ../ecdict.csv --out ecdict.dict.yaml --limit 20000
-# 想收全量（构建会变慢）：--limit 100000；每词释义条数：--max-meanings 3
-```
+| 现象 | 原因 / 处理 |
+|---|---|
+| 释义完全不出现 | 不在英文模式（只是 `ascii_mode` 直通），或 `build/en.table.bin` 比源文件旧 → 重新部署 |
+| 打 Tab 没反应、也没 AI | 桥没跑（看 `bridge.log`）；或档位缺 `base_url`（日志写「跳过请求」）；或词长 < `min_input_len` |
+| AI 一直失败 `WinError 10061` | 端口连不上：API 地址写错、或需要代理 |
+| 改了 lua 没生效 | 只部署不够，要重启输入法（桥会自动做） |
+| 部署失败 / 反复部署 | `%TEMP%\rime.weasel\*.log`；检查用户目录里有没有名叫 `nul` 的文件（会让 librime 部署抛异常） |
+| `Ctrl+Enter` 上屏的是单词 | 高亮的那条没有释义（比如联想出来的词），或者该词释义为空 |
 
-- 只收小写、`^[a-z][a-z'-]*$` 的词；带空格/大写的条目会被跳过（**大写开头的词查不到，会当普通英文上屏**）。
-- 每条 `英文原词` 权重 10、释义 0，所以原词永远排第一，空格 = 上屏英文。
-- 想加自己的词条：直接往 `ecdict.dict.yaml` 末尾加 `释义<TAB>word<TAB>0`，重新部署即可。
-
-## 大模型怎么接进来的（整条链路）
-
-```
-你打字
-  │  lua/en_ai_request.lua（processor）
-  │  每次 input 变化写一次 <tmp>/rime_en_ai/request.txt   ← 只写文件，不联网
-  ▼
-scripts/ai_bridge.py（常驻 Python，纯标准库）
-  │  盯着 request.txt；内容稳定 delay_ms 毫秒（=你停手了）才动手
-  │  ① 词在本地词库里？→ 跳过（skip_local）
-  │  ② 缓存里查过？    → 直接回放（cache.json）
-  │  ③ 都没有         → POST 你的 API
-  │  写 response.txt（第 1 行单词，其余译文）
-  │  注入一个 F24 假按键
-  ▼
-lua/en_ai_request.lua 收到 F24 → refresh_non_confirmed_composition()
-  ▼
-lua/en_ai_candidate.lua（translator）读 response.txt → 补一条 [AI] 候选
-```
-
-配置文件（**放仓库外**，避免 key 进 git）：
-
-```
-Windows     : %LOCALAPPDATA%\rime-en-ai\config.json
-macOS/Linux : ~/Library/Rime/ai_config.json
-旧位置      : %LOCALAPPDATA%\\rime-en-ai\\config.json（启动时自动迁移）
-```
-
-### 多个 AI，随时切换
-
-`config.json` 支持多档，`active` 指当前用哪个：
-
-```json
-{
-  "active": "minimax",
-  "profiles": {
-    "minimax": { "base_url": "...anthropic/v1/messages", "model": "MiniMax-M3.1-Flash", "api_key": "sk-..." },
-    "openai":  { "base_url": "https://api.openai.com/v1/chat/completions", "model": "gpt-4o-mini", "api_key": "sk-..." },
-    "deepseek":{ "base_url": "https://api.deepseek.com/chat/completions", "model": "deepseek-chat", "api_key": "sk-..." }
-  },
-  "timeout": 12, "delay_ms": 900, "prompt": "..."
-}
-```
-
-- 档位里的字段（`base_url` / `model` / `api_key` / `api` / `max_tokens` / `request_template` / `response_path` / `headers`…）**覆盖**顶层；
-  其余（`prompt`、`delay_ms`、`skip_local`、`save`…）是全局的。
-- 旧的单档写法（顶层直接写 `base_url`）仍然兼容。
-- **在方案选单里选**（F4 / `Ctrl+Shift+E` / `` Ctrl+` ``）——`ai_profile` 是个收音机组，
-  每个档位单独一行，✓ 表示当前档位：
-
-```yaml
-switches:
-  - name: ai_profile
-    options: [ ai_minimax, ai_openai ]      # 选项名，lua 用 ai_<档位名> 去读
-    states: [ minimax, openai ]             # 选单里显示的文字
-    reset: 0                                # 默认第 1 个
-en_ai:
-  profiles: "minimax,openai"                # 顺序必须和上面一致
-```
-
-选完立刻生效（lua 把选中的档位名写进 `ai_profile.txt`，桥下一次请求就用它），
-日志里是 `已切换 AI：openai`，候选注释变成 `[AI]·openai`。没有快捷键。
-
-### 配置项
-
-| 字段 | 默认 | 作用 |
-|---|---|---|
-| `base_url` | — | 必填。完整 URL，如 `https://api.deepseek.com/chat/completions` |
-| `api_key` | 空 | 走 `Authorization: Bearer <key>`；自定义鉴权用 `headers` |
-| `model` | `gpt-4o-mini` | OpenAI 兼容接口的模型名 |
-| `prompt` | 内置词典提示词 | system 消息 |
-| `temperature` | 0 | 翻译要稳定，别发散 |
-| `timeout` | 12 | 秒；超时只记日志，不影响打字 |
-| `delay_ms` | 900 | 停手多久才请求（通常由 schema 的 `en_ai/delay_ms` 覆盖） |
-| `min_input_len` | 2 | 太短不查 |
-| `skip_local` | true | **本地词库有这个词就不花 API 钱** |
-| `local_dict` | 自动找 `%APPDATA%\Rime\ecdict.dict.yaml` | 上面那条用的词表 |
-| `request_template` | 空 | 非 OpenAI 形状的接口：`{"q":"{text}"}`，走这个模板 |
-| `response_path` | `choices.0.message.content` | 从返回 JSON 里取译文（点号路径） |
-| `headers` | 空 | 额外请求头，如 `{"X-Token": "..."}` |
-
-OpenAI 兼容接口：
-
-```json
-{ "base_url": "https://api.deepseek.com/chat/completions",
-  "model": "deepseek-chat", "api_key": "sk-...", "timeout": 12, "delay_ms": 900 }
-```
-
-自定义 HTTP 接口：
-
-```json
-{ "base_url": "https://my.api/translate",
-  "request_template": "{\"q\": \"{text}\", \"src\": \"en\", \"dst\": \"zh\"}",
-  "response_path": "data.translation",
-  "headers": { "X-Token": "..." } }
-```
-
-### 发出去的是什么
-
-只有**当前那个单词**，没有上下文、没有历史、没有你打的其它内容：
-
-```json
-{ "model": "deepseek-chat", "temperature": 0,
-  "messages": [
-    { "role": "system", "content": "你是英汉词典。把用户给出的英文单词或短语翻译成简体中文，只输出释义…" },
-    { "role": "user",   "content": "hello" } ] }
-```
-
-### 省钱的四道闸
-
-1. `skip_local`：本地 ECDICT 命中的词直接跳过（2 万高频词基本覆盖日常阅读）
-2. `cache.json`：同一个词一辈子只查一次（存 `<tmp>/rime_en_ai/cache.json`，可删）
-3. `delay_ms` 去抖：连续打字期间不发，只有停手才发
-4. `Ctrl+Shift+A`：一键关掉整层 AI（或把 `ai_translate` 的 `reset` 改 0）
-
-### 自检与排错
-
-```powershell
-python scripts\ai_bridge.py --once hello   # 不走 IME，直接验 key/网络/解析
-python scripts\ai_bridge.py                # 常驻，日志里能看到 命中/缓存/跳过/译文
-```
-
-- 没有任何 `[AI]` 候选：先看桥有没有在跑；再看 `<tmp>\rime_en_ai\request.txt` 是否在变；再看 `%TEMP%\rime.weasel\*.WARNING.*` 有没有 `lua_gears.cc` 报错
-- 桥日志显示 `x 本地已有释义，跳过 API`：这是预期行为，想强制查就设 `"skip_local": false`
-- 注入 F24 失败（日志 `注入按键失败`）：结果仍会缓存，下一次按键时 `[AI]` 才出现
-
-## 触发时机
-
-- **停顿触发**：`en_ai/delay_ms`（在 `english.schema.yaml` 里，桥接进程按请求文件里的值走，改一处即可）。
-- **显式触发**：`en_ai/trigger: "Control+Return"`，按下立刻请求（不用等停顿）。
-- **关掉 AI**：`Ctrl+Shift+A`，或把 `ai_translate` 的 `reset` 改成 0。
-
-`Ctrl+Shift+A` 用的是 rime 的 `toggle` 动作，定义在 `english.schema.yaml`：
-
-```yaml
-switches:
-  - name: ai_translate
-    reset: 1
-    states: [ AI关, AI开 ]
-key_binder:
-  bindings:
-    - { when: always, accept: "Control+Shift+A", toggle: ai_translate }
-```
-
-lua 两个脚本都会先看 `context:get_option("ai_translate")`：关掉后**不再写 `request.txt`、也不再出 `[AI]` 候选**，
-本地词典完全不受影响。这个键只在英文模式里绑了，中文方案按它没反应。
-
-## 为什么非要一个桥接进程
-
-Rime 的 lua 没有定时器，也没有“空闲回调”；候选只在**按键时**生成。所以：
-
-1. 「停手 N 毫秒」这件事只能由外部进程计时 → `ai_bridge.py`；
-2. 结果回来时没人按键，候选不会自己刷新 → 桥注入一个 `F24` 假按键，`en_ai_request.lua` 收到后调
-   `context:refresh_non_confirmed_composition()` 重绘。
-
-同理，**候选生成路径上绝不能同步调网络**（`io.popen("curl …")` 会卡住打字），只写一个小文件是安全的。
-
-## 三端注意
-
-| 端 | 桥接注入 F24 | 备注 |
-|---|---|---|
-| Windows | `keybd_event(0x87)`，小狼毫实测可用 | 推荐 |
-| macOS | `osascript` 模拟 F24，未必稳定 | 不稳定时把 `en_ai/trigger` 设一个键，手动触发 |
-| Linux | 目前不注入 | AI 结果会在**下一次按键**时出现（缓存仍在） |
+`python scripts\lookup.py typst titration ran` 可以查某个词到底在哪个库里。
 
 ## 自测
 
-```sh
-lua test_en_ai.lua                 # 请求/响应文件协议 + 候选匹配 + 缓存
-python3 scripts/ai_bridge.py --selftest   # 起本地假服务，验证 OpenAI 与自定义模板两条路
+```bash
+bash tests/run.sh                    # 8 个 Lua 组件的行为测试
+python scripts/ai_bridge.py --selftest
 ```
+
+测试用一个假的候选流喂给 filter、用假的请求文件喂给桥，都不需要输入法在跑。
