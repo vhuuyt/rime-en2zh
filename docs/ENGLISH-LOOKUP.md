@@ -62,7 +62,7 @@
 |---|---|---|
 | `request.txt` | lua（Tab） | 第 1 行单词、第 2 行停顿毫秒（Tab 固定 `0`）、第 3 行时间戳 |
 | `response.txt` | 桥 | 第 1 行单词、其余是释义（filter 在"本地没有候选"时读它） |
-| `ai_ecdict.dict.yaml` | 桥 | 追加 `释义<TAB>单词<TAB>0`，并把 `#v` 抬到当前时间戳 |
+| `ai_ecdict.dict.yaml` | 桥 | 追加 `\x01释义<TAB>小写单词<TAB>0`，并把 `#v` 抬到当前时间戳 |
 | `ai_profile.txt` | lua | F4 里选中的 AI 档位（桥据此切换 `active`） |
 | `cache.json` | 桥 | 已查过词的完整结果（zh/pos/cap），避免重复付费 |
 | `bridge.log` | 桥 | 日志（超过 1MB 轮转） |
