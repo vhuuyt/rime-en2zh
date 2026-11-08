@@ -1,18 +1,19 @@
 -- lua/en_ai_request.lua      【英文模式】processor（排在 processors 第一位）
 --
--- 一次按键里做四件事：
---   1. 拼写中每次输入变化 → 写 <tmp>/rime_en_ai/request.txt（只写文件，绝不联网）
---   2. Tab              → 长释义往前滚（仅当 filter 写了 scroll.txt 且词匹配）
---   3. Ctrl+Enter       → 把当前高亮候选的释义上屏
---   4. Ctrl+Delete      → 删掉这个 AI 补录的词（只删 ai_ecdict.dict.yaml），删完收起候选框
---   另外：收 F24（桥注入的假按键）→ 重绘候选；顺带把方案选单里选中的 AI 档位写进 ai_profile.txt
+-- 只在按键上做决定，**打字过程中不写任何文件**（英文模式的手感全靠这条）：
+--   Tab          → 三选一，见下面 func 里的注释（滚长释义 / 放行 / 发 AI 请求）
+--   Ctrl+Enter   → 把当前高亮候选的释义上屏（完整释义在 en_state 内存里）
+--   Ctrl+Delete  → 删掉这个 AI 补录的词（只删 ai_ecdict.dict.yaml），删完收起候选框
+--   F24          → 桥注入的假按键，只用来触发候选重绘
+--   档位变化      → 把 F4 选单里选中的 AI 档位写进 ai_profile.txt（仅变化时写一次）
+--
+-- AI 请求唯一的出口是 Tab（见 write_request）：写一次 request.txt，桥负责计时/联网/写回。
+-- 早期版本是「打字停顿 900ms 自动请求」，那样每次按键都得写文件，已废弃。
 --
 -- 挂载：english.schema.yaml → engine/processors 第一项 lua_processor@*en_ai_request
 
 local M = {}
 
--- 词表（共享模块）：用来判断"这个词有没有本地释义"
-local dict_data = require("en_dict_data")
 -- 内存状态（滚动偏移、完整释义）：与 filter 共享，避免每次按键读写文件
 local state = require("en_state")
 
@@ -36,9 +37,7 @@ function M.init(env)
   env.dir = default_dir()
   local dir = cfg_str(cfg, "en_ai/dir")
   if dir then env.dir = dir:gsub("\\", "/"):gsub("/+$", "") end
-  env.delay_ms = tonumber(cfg_str(cfg, "en_ai/delay_ms") or "") or 900
   env.min_len = tonumber(cfg_str(cfg, "en_ai/min_input_len") or "") or 2
-  env.trigger = cfg_str(cfg, "en_ai/trigger") or ""
   env.tab_key = cfg_str(cfg, "en_ai/tab") or "Tab"
   env.tab_step = tonumber(cfg_str(cfg, "en_ai/tab_step") or "") or 4
   env.width = tonumber(cfg_str(cfg, "en_ai/width") or "") or 20
@@ -61,7 +60,6 @@ function M.init(env)
   local rime_dir = appdata and (appdata:gsub("\\", "/") .. "/Rime")
                     or ((os.getenv("HOME") or ".") .. "/Library/Rime")
   env.ai_dict = cfg_str(cfg, "en_ai/ai_dict") or (rime_dir .. "/dicts/ai_ecdict.dict.yaml")
-  env.base_dict = cfg_str(cfg, "en_ai/base_dict") or (rime_dir .. "/dicts/ecdict.dict.yaml")
 
   env.last_input = ""
 end
@@ -87,7 +85,7 @@ local function sync_profile(ctx, env)
   end
 end
 
--- 请求文件格式：第 1 行 = 单词，第 2 行 = 停顿毫秒，第 3 行 = 时间戳
+-- 请求文件格式：第 1 行 = 单词，第 2 行 = 停顿毫秒（Tab 触发固定 0 = 立刻），第 3 行 = 时间戳
 local function split_tabs(line)
   local cols = {}
   for c in (line .. "\t"):gmatch("([^\t]*)\t") do cols[#cols + 1] = c end
@@ -173,10 +171,10 @@ function M.func(key, env)
     end
   end
 
-  -- Tab 有两个用途，看当前词有没有本地释义：
-  --   有长释义 → 往左滚一格（filter 会把 scroll.txt 写好）
-  --   没有释义 → 触发一次 AI 查询（delay 0，桥立即发）
-  --   有释义但不长 → 放行给应用
+  -- Tab 有三个用途，看当前词有没有本地释义：
+  --   有长释义       → 往左滚一格（滚动偏移在 en_state 内存里，不写文件）
+  --   有释义但不长   → 放行给应用
+  --   没有释义       → 触发一次 AI 查询（delay 0，桥立即发）
   if repr == env.tab_key and ctx:is_composing() then
     local cur = ctx.input or ""
     if cur ~= "" then
@@ -187,15 +185,13 @@ function M.func(key, env)
         ctx:refresh_non_confirmed_composition()
         return 1                     -- 吃掉 Tab，不再传给应用
       end
-      -- 2) 本地有释义 → Tab 无事可做，放行
-      local words = dict_data.load(env.base_dict, env.ai_dict)
-      if dict_data.meaning(words, cur) then
+      -- 2) 本地有释义（短）→ Tab 无事可做，放行
+      if state.get_meaning(cur) then
         return 2
       end
       -- 3) 没有释义 → 让桥去问 AI（立刻，不等停顿）
       if #cur >= env.min_len then
-        env.seq = (env.seq or 0) + 1
-        write_request(env.dir, cur, 0, env.seq)
+        write_request(env.dir, cur, 0)
         return 1
       end
     end

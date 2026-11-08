@@ -1,22 +1,30 @@
 -- lua/en_assoc.lua           【英文模式】filter（filters 第一位）
 --
 -- 把候选改造成"单词 + 尾部释义"：
---   * 释义候选丢掉，改贴到单词候选的 comment 上
---   * 释义超过 en_ai/width 就按窗口滚动（偏移放在 en_state 内存里，Tab 由 processor 推进）
---   * 词库（本地 + AI 补录）里都没有的词，补一个单词候选出来，保证空格上屏的是单词
---   * 完整释义记在 en_state 里，给 Ctrl+Enter 用
+--
+--   词典里，一个词的释义本来就是**紧跟在这个词的候选后面**的另几条候选
+--   （生成器就是这么排的：word<TAB>word<TAB>10 换行 释义<TAB>word<TAB>0 …）。
+--   所以这里不需要查任何表：
+--     * 认出"单词候选"和"释义候选" → 释义搬到单词的 comment 上，释义自己丢掉
+--     * 释义超过 en_ai/width 就按窗口滚动（偏移放在 en_state 内存里，Tab 由 processor 推进）
+--     * 词库里没有这个词（只有 AI 结果）→ 补一个单词候选，保证空格上屏的是单词
+--     * 完整释义记在 en_state 里，给 Ctrl+Enter 用
+--
+-- ★ 为什么"单词候选"和"释义候选"能分开？
+--   两条线索，任意一条成立就算单词候选：
+--     1) 质量大：词库里的单词行权重 10（质量≈22026），释义行权重 0（质量≈1）
+--     2) 文本像纯单词：^[%a][%a'-]*$  （释义多是「n. 消息」这种，不会像单词）
+--   第 2 条是兜底：万一你手写词条时权重填错，词也不会消失。
 --
 -- ★ 每次按键不做任何文件写入：滚动偏移、完整释义都放在共享内存模块 en_state。
 --   唯一可能读文件的是"本地查不到释义"时读一次 response.txt（AI 结果），很罕见。
---
--- 挂载：english.schema.yaml → engine/filters 的 lua_filter@*en_assoc
 
 local M = {}
 
-local dict_data = require("en_dict_data")
 local state = require("en_state")
 
 local WORD_RE = "^[%a][%a'%-]*$"
+local WORD_QUALITY = 1000        -- 词库单词行的质量下限（权重 10 → ≈22026）
 
 local function default_dir()
   local tmp = os.getenv("TEMP") or os.getenv("TMPDIR") or os.getenv("TMP") or "/tmp"
@@ -68,11 +76,59 @@ local function read_response(dir)
   return word, text
 end
 
+-- ---------------------------------------------------------------- AI 词库（小）
+-- 只读 ai_ecdict.dict.yaml（桥自动写的那些词，通常几十条）→ 词 → 释义
+-- 大词库（ecdict / chem）不读：它们的释义就在候选流里，不用查表。
+local function load_ai_dict(path)
+  local words = {}
+  local f = io.open(path, "r")
+  if not f then return words end
+  for line in f:lines() do
+    if line:sub(1, 1) ~= "#" and line:find("\t", 1, true) then
+      local c1, c2 = line:match("^([^\t]*)\t([^\t]*)")
+      if c1 and c2 and c1 ~= "" and c2 ~= "" and c1 ~= c2 then
+        local slot = words[c2]
+        if not slot then slot = {}; words[c2] = slot end
+        if slot.meaning == nil then slot.meaning = c1 end
+      end
+    end
+  end
+  f:close()
+  return words
+end
+
+local function ai_version(path)
+  local f = io.open(path, "r")
+  if not f then return "" end
+  local ver = ""
+  for _ = 1, 8 do
+    local line = f:read("*l")
+    if not line then break end
+    local v = line:match("^#v(%d+)")
+    if v then ver = v break end
+  end
+  f:close()
+  return ver
+end
+
+local function ai_dict(env)
+  local ver = ai_version(env.ai_path)
+  if env.ai_ver == ver then return env.ai_words end
+  env.ai_ver = ver
+  env.ai_words = load_ai_dict(env.ai_path)
+  return env.ai_words
+end
+
+-- 释义来源：AI 词库 → 桥刚返回的译文
 local function meaning_for(env, text)
-  -- 1) 本地词表（大写词按小写回退）
-  local meaning = dict_data.meaning(env.words, text)
-  if meaning then return meaning end
-  -- 2) 桥刚返回的 AI 译文（每个词只查一次）
+  local slot = ai_dict(env)[text]
+  if slot and slot.meaning then return slot.meaning end
+  local lower = text:lower()
+  if lower ~= text then
+    slot = ai_dict(env)[lower]
+    if slot and slot.meaning then return slot.meaning end
+  end
+  -- 桥刚返回的译文（每个词只查一次）
   if env.resp_checked ~= text then
     env.resp_checked = text
     local word, got = read_response(env.dir)
@@ -95,61 +151,78 @@ end
 function M.init(env)
   local cfg = env.engine.schema.config
   env.dir = cfg_str(cfg, "en_ai/dir") or default_dir()
-  env.base_path = cfg_str(cfg, "en_ai/base_dict") or (rime_dir() .. "/dicts/ecdict.dict.yaml")
   env.ai_path = cfg_str(cfg, "en_ai/ai_dict") or (rime_dir() .. "/dicts/ai_ecdict.dict.yaml")
   env.width = tonumber(cfg_str(cfg, "en_ai/width") or "") or 20
-  env.step = tonumber(cfg_str(cfg, "en_ai/step") or "") or 2
   env.marquee = (cfg_str(cfg, "en_ai/marquee") or "1") ~= "0"
-  env.words = nil
+  env.ai_ver = nil
+  env.ai_words = nil
   env.resp_checked = nil
   env.resp_word = nil
   env.resp_text = nil
 end
 
+-- 单词候选还是释义候选？
+local function is_word(cand)
+  local text = cand.text or ""
+  if cand.quality and cand.quality > WORD_QUALITY then return true end
+  return text:match(WORD_RE) ~= nil
+end
+
 function M.func(input, env)
   local ctx = env.engine.context
-  env.words = dict_data.load(env.base_path, env.ai_path)
-
   local input_text = ctx.input or ""
   state.clear_meanings()
 
-  -- 先把候选分流：单词留下，释义丢掉（释义拿去当注释）
-  local words, seen_exact, dropped_meaning = {}, false, nil
+  local offset = state.offset_of(input_text)
+  local pending = nil          -- 待配释义的单词候选
+  local seen_exact = false
+  local dropped = nil          -- 孤立的释义（没有对应的单词行）
+
+  local function apply_comment(cand, meaning)
+    if not meaning or meaning == "" or meaning == cand.text then return end
+    state.set_meaning(cand.text, meaning)          -- 完整释义存内存，给 Ctrl+Enter
+    if env.marquee and (utf8.len(meaning) or #meaning) > env.width then
+      cand.comment = scroll(meaning, env.width, offset)
+    else
+      cand.comment = meaning
+    end
+  end
+
   for cand in input:iter() do
     local text = cand.text or ""
-    if text:match(WORD_RE) then
+    if is_word(cand) then
       if text == input_text then seen_exact = true end
-      words[#words + 1] = { cand = cand, text = text }
-    elseif not dropped_meaning then
-      dropped_meaning = text
-    end
-  end
-
-  -- 词库里都没有这个词（只有 AI 结果）→ 补一个单词候选，保证空格上单词
-  if not seen_exact and input_text:match(WORD_RE) then
-    local meaning = meaning_for(env, input_text) or dropped_meaning
-    if meaning then
-      local seg = back_segment(ctx)
-      local cand = Candidate("en_ai", seg and seg.start or 0,
-                             seg and seg._end or #input_text, input_text, meaning)
-      cand.quality = 0.05
-      table.insert(words, 1, { cand = cand, text = input_text, meaning = meaning })
-    end
-  end
-
-  -- 输出：释义贴到 comment，过长则按窗口滚动
-  local offset = state.offset_of(input_text)
-  for _, item in ipairs(words) do
-    local meaning = item.meaning or meaning_for(env, item.text)
-    if meaning and meaning ~= item.text then
-      state.set_meaning(item.text, meaning)          -- 完整释义存内存，给 Ctrl+Enter
-      if env.marquee and (utf8.len(meaning) or #meaning) > env.width then
-        item.cand.comment = scroll(meaning, env.width, offset)
+      if pending then
+        yield(pending)          -- 上一个词没有释义（只有原词行）
+      end
+      pending = cand
+    else
+      -- 这是释义候选：配给上一个单词
+      if pending then
+        apply_comment(pending, text)
+        yield(pending)
+        pending = nil
       else
-        item.cand.comment = meaning
+        dropped = dropped or text
       end
     end
-    yield(item.cand)
+  end
+  if pending then
+    yield(pending)
+  end
+
+  -- 词库里完全没有这个词 → 补一个单词候选，保证空格上屏的是单词
+  -- （释义可能来自 AI 词库 / 桥的返回；没有释义也照样给一个词，方便直接上屏）
+  if not seen_exact and input_text:match(WORD_RE) then
+    local meaning = meaning_for(env, input_text) or dropped
+    local seg = back_segment(ctx)
+    local cand = Candidate("en_ai", seg and seg.start or 0,
+                           seg and seg._end or #input_text, input_text, meaning)
+    cand.quality = 0.05
+    if meaning then
+      apply_comment(cand, meaning)
+    end
+    yield(cand)
   end
 end
 

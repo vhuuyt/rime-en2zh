@@ -1,6 +1,6 @@
 # Rime dictionary
 # encoding: utf-8
-#v1794111574
+#v1794124443
 #
 # AI 补录词库（英文模式）—— 由 ai_bridge.py 自动追加，也可手工删改
 # 格式：文本 <TAB> 编码 <TAB> 权重
@@ -18,6 +18,8 @@ Figma	Figma	10
 n. Figma，在线界面设计与协作软件	Figma	0
 Infor	Infor	10
 n. 企业软件公司	Infor	0
+LaTeX	LaTeX	10
+n. 排版系统；排版语言	LaTeX	0
 Li	Li	10
 n. 李；锂	Li	0
 Ni	Ni	10
@@ -28,6 +30,8 @@ Olea	Olea	10
 n. 木犀榄属	Olea	0
 Pilog	Pilog	10
 n. 皮洛格	Pilog	0
+Sdu	Sdu	10
+n. 山东大学；开发单元	Sdu	0
 Typst	Typst	10
 n. 一种基于 Rust 的现代排版系统…	Typst	0
 Xr	Xr	10
@@ -80,6 +84,8 @@ sa	sa	10
 n. 圣人；灵师	sa	0
 sakura	sakura	10
 n. 樱花；樱桃树	sakura	0
+sdu	sdu	10
+n. 山东大学；开发单元	sdu	0
 ty	ty	10
 int. 谢谢	ty	0
 typst	typst	10

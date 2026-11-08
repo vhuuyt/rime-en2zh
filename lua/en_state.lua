@@ -1,9 +1,9 @@
 -- lua/en_state.lua           【英文模式】共享的内存状态
 --
 -- 目的：让"每次按键"这条路径上**不做任何文件 I/O**。
--- 原来 filter 每次候选生成都要写 cands.tsv / scroll.txt，processor 还要读
--- scroll.txt —— 全是同步阻塞的小文件操作。现在这些状态都放内存里，
--- 由需要它的组件通过 require 共享（同一个 lua_State，天然共享一份）。
+-- 滚动偏移、完整释义这些都放内存里，由需要它的组件通过 require 共享
+-- （同一个 lua_State，天然共享一份），不再写 cands.tsv / scroll.txt 那种
+-- 同步阻塞的小文件。
 --
 -- 存的东西：
 --   offset[word]  滚动偏移（长释义往左滚）

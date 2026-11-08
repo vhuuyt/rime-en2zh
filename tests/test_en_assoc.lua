@@ -15,7 +15,6 @@ do
   package.path = dir .. "/lua/?.lua;" .. package.path
 end
 
-local dict_data = require("en_dict_data")
 local state = require("en_state")
 
 local ok, M = pcall(dofile, dir .. "/lua/en_assoc.lua")
@@ -29,7 +28,6 @@ local tmpdir = os.tmpname()
 os.remove(tmpdir)
 os.execute('mkdir -p "' .. tmpdir .. '"')
 
-local base = tmpdir .. "/ecdict.dict.yaml"
 local aidict = tmpdir .. "/ai_ecdict.dict.yaml"
 
 local ver = 0
@@ -38,23 +36,9 @@ local function write(path, body)
   local f = io.open(path, "w")
   f:write("#v", ver, "\n", body)     -- 版本号变了 → 共享模块会重读
   f:close()
-  dict_data.invalidate()
 end
 
-write(base, table.concat({
-  "hello\thello\t10",
-  "interj. 喂, 嘿\thello\t0",
-  "n. 表示问候\thello\t0",
-  "help\thelp\t10",
-  "v. 帮助\thelp\t0",
-  "held\theld\t10",
-  "v. 握住\theld\t0",
-  "info\tinfo\t10",
-  "n. 信息; 资料\tinfo\t0",
-  "information\tinformation\t10",
-  "n. 消息; 知识; 通知; 情报; 信息; 问讯处\tinformation\t0",
-  "", }, "\n"))
-
+-- AI 词库（filter 只读这一份，很小）
 write(aidict, table.concat({
   "typst\ttypst\t10",
   "n. 排版系统\ttypst\t0",
@@ -64,8 +48,14 @@ write(aidict, table.concat({
   "", }, "\n"))
 
 -- ---- mock ----
-local function mk_cand(text, comment)
-  return { text = text, comment = comment, quality = 0 }
+-- 质量是识别"单词候选/释义候选"的关键：
+-- 词库单词行权重 10 → 质量≈22026；释义行权重 0 → 质量≈1
+local function mk_word(text, comment)
+  return { text = text, comment = comment, quality = 22026 }
+end
+
+local function mk_meaning(text)
+  return { text = text, comment = nil, quality = 1 }
 end
 
 local function mk_input(cands)
@@ -93,7 +83,6 @@ local env = {
       config = {
         get_string = function(_, key)
           if key == "en_ai/dir" then return tmpdir end
-          if key == "en_ai/base_dict" then return base end
           if key == "en_ai/ai_dict" then return aidict end
           if key == "en_ai/width" then return "12" end
           return nil
@@ -118,8 +107,8 @@ print("== en_assoc 测试 ==")
 
 -- 1. 释义行丢掉、释义贴到单词候选的 comment
 yielded = {}
-M.func(mk_input({ mk_cand("hello"), mk_cand("interj. 喂, 嘿"), mk_cand("n. 表示问候"),
-                   mk_cand("help", "~p"), mk_cand("v. 帮助") }), env)
+M.func(mk_input({ mk_word("hello"), mk_meaning("interj. 喂, 嘿"), mk_meaning("n. 表示问候"),
+                   mk_word("help"), mk_meaning("v. 帮助") }), env)
 check("释义行被丢掉（剩 2 个候选）", #yielded == 2, "n=" .. #yielded)
 check("第 1 个是 hello", yielded[1] and yielded[1].text == "hello")
 check("hello 的注释变成释义", yielded[1] and yielded[1].comment == "interj. 喂, 嘿",
@@ -134,17 +123,17 @@ check("en_state 记下完整释义", state.get_meaning("hello") == "interj. 喂,
 -- 3. AI 词库里的词同样带释义
 env.engine.context.input = "typst"
 yielded = {}
-M.func(mk_input({ mk_cand("typst"), mk_cand("n. 排版系统"), mk_cand("Typst") }), env)
+M.func(mk_input({ mk_word("typst"), mk_meaning("n. 排版系统"), mk_word("Typst") }), env)
 check("AI 词带释义", yielded[1] and yielded[1].comment == "n. 排版系统",
       yielded[1] and tostring(yielded[1].comment) or "nil")
 check("大写条目也保留", #yielded == 2 and yielded[2].text == "Typst")
 
--- 4. 大写词按小写回退
+-- 4. 大写词：本地没有 → 补一个单词候选（释义等 AI 或 response.txt）
 env.engine.context.input = "Info"
 yielded = {}
-M.func(mk_input({ mk_cand("Info") }), env)
-check("大写词按小写回退查释义", yielded[1] and yielded[1].comment == "n. 信息; 资料",
-      yielded[1] and tostring(yielded[1].comment) or "nil")
+M.func(mk_input({}), env)
+check("大写词补出单词候选", #yielded == 1 and yielded[1].text == "Info",
+      yielded[1] and yielded[1].text or "nil")
 
 -- 5. 没有候选时补一个单词候选（AI 词）
 env.engine.context.input = "typst"
@@ -159,7 +148,7 @@ check("补出的候选带释义", yielded[1] and yielded[1].comment == "n. 排�
 env.engine.context.input = "information"
 local function comment_of()
   yielded = {}
-  M.func(mk_input({ mk_cand("information") }), env)
+  M.func(mk_input({ mk_word("information"), mk_meaning("n. 消息; 知识; 通知; 情报; 信息; 问讯处") }), env)
   return yielded[1] and yielded[1].comment or ""
 end
 local c1 = comment_of()
@@ -174,26 +163,26 @@ check("Tab 之后窗口前进了", c3 ~= c2, c2 .. " vs " .. c3)
 -- 7. 换词 → 偏移清零
 env.engine.context.input = "info"
 yielded = {}
-M.func(mk_input({ mk_cand("information") }), env)
+M.func(mk_input({ mk_word("information") }), env)
 check("换词后偏移清零", state.offset_of("info") == 0,
       "off=" .. tostring(state.offset_of("info")))
 
--- 8. 词库改了之后能读到新释义
-write(base, table.concat({
+-- 8. AI 词库改了之后能读到新释义
+write(aidict, table.concat({
   "hello\thello\t10",
   "interj. 喂喂\thello\t0",
   "", }, "\n"))
 env.engine.context.input = "hello"
 yielded = {}
-M.func(mk_input({ mk_cand("hello") }), env)
-check("词库更新后读到新释义", yielded[1] and yielded[1].comment == "interj. 喂喂",
+M.func(mk_input({ mk_word("hello"), mk_meaning("interj. 喂喂") }), env)
+check("AI 词库更新后读到新释义", yielded[1] and yielded[1].comment == "interj. 喂喂",
       yielded[1] and tostring(yielded[1].comment) or "nil")
 
 -- 9. 词库里没有的词：候选保留、注释不动
 env.engine.context.input = "quux"
 yielded = {}
-M.func(mk_input({ mk_cand("quux", "~x") }), env)
-check("未收录词保留且不改注释", #yielded == 1 and yielded[1].comment == "~x")
+M.func(mk_input({ mk_word("quux") }), env)
+check("未收录词保留且不改注释", #yielded == 1 and yielded[1].comment == nil)
 
 os.execute('rm -rf "' .. tmpdir .. '"')
 

@@ -4,8 +4,8 @@
 # 英文模式（独立方案）
 #   - 本地：ecdict.dict.yaml（由 scripts/ecdict2dict.py 从 ECDICT 生成）
 #         候选顺序 = 英文原词 → 本地释义
-#   - 远端：停手 delay_ms 毫秒后，scripts/ai_bridge.py 调你的自定义 API，
-#         结果以 [AI] 候选补上（见 en_ai 段与脚本内 config.json）
+#   - 远端：本地查不到的词，按 Tab 让 scripts/ai_bridge.py 调你的 API，
+#         结果立刻补成候选并写回 dicts/ai_ecdict.dict.yaml（见 en_ai 段与 ai_config.json）
 #
 # 切换：F4（或 Ctrl+Shift+E / Ctrl+`）选「英文模式」
 
@@ -61,7 +61,6 @@ engine:
     - fallback_segmentor
   translators:
     - lua_translator@*typst_dict       # typ → Typst 片段候选
-    - lua_translator@*en_ai_candidate
     - table_translator                 # ecdict + packs(ai_ecdict)
     - punct_translator
   filters:
@@ -92,8 +91,7 @@ recognizer:
 
 key_binder:
   import_preset: default
-  bindings:
-    - { when: always, accept: "Control+Shift+A", toggle: ai_translate }
+  # AI 总开关（ai_translate）只在 F4 选单里点，不绑快捷键
 
 # ---- Typst 片段词典（与中文方案共用同一份 lua/typst_dict.lua）----
 typst_dict:
@@ -102,9 +100,7 @@ typst_dict:
 # ---- 大模型翻译（由 lua/en_ai_request.lua + scripts/ai_bridge.py 使用）----
 en_ai:
   dir: ""              # 空 = 系统临时目录/rime_en_ai；桥接脚本与这里必须一致
-  delay_ms: 900        # 停手多久才发请求（桥接脚本读这个值，改这里即可）
-  trigger: ""          # 可选：想用某个键立刻请求，填 repr，如 "Control+Return"
-  marker: "[AI]"       # AI 候选的注释文字
+  # 没有「停顿多久自动查」这回事了：AI 只在按 Tab 且本地查不到释义时请求一次
   # >>> ai_names auto
   profiles: "minimax,openai,deepseek"
   # <<< ai_names auto
