@@ -26,11 +26,34 @@
 拿到当前高亮候选的文本 → `engine:commit_text(text .. " ")` → 吃掉这个按键。
 只对**纯英文单词**（`^[%a][%a'%-]*$`）生效；中文释义、标点、Typst 片段照旧走 Rime 自己。
 
-开关：`english.schema.yaml` →
+### 两个开关
+
+**① F4 选单里的「自动空格」（临时，随时切）**
+
+`english.schema.yaml` 的 `switches` 里声明着，所以 F4 菜单里能看到
+「自动空格开 → 自动空格关」这一项：
+
+```yaml
+switches:
+  - name: auto_space
+    reset: 1
+    states: [ 自动空格关, 自动空格开 ]
+```
+
+> F4 菜单只显示**带 `states`** 的 switch —— `switch_translator.cc` 里
+> `if (!has_state_label(option, 0)) return kContinue;`。
+> 所以 `ascii_mode` / `ascii_punct` 没写 `states`，就不会出现在菜单里（故意的）。
+
+`en_space.lua` 每次按键都读一遍这个 option，**改完立刻生效**，不用重新部署。
+`reset: 1` 表示每次进英文方案默认开着；没加到 `switcher/save_options`，
+所以重启输入法会回到默认（想跨会话记住就把 `auto_space` 加进
+`default.custom.yaml` 的 `switcher/save_options`）。
+
+**② yaml 里的总开关（永久）**
 
 ```yaml
 en_ai:
-  auto_space: 1                 # 1 = 补，0 = 不补（默认 1）
+  auto_space: 0                 # 0 = 彻底关（F4 那个开关也不起作用），默认 1
   auto_space_keys: space,Return # 哪些键触发（逗号分隔）
 ```
 

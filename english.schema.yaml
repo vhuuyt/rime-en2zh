@@ -24,6 +24,10 @@ switches:
   - name: ai_translate
     reset: 1
     states: [ AI关, AI开 ]
+  # F4 选单里的「自动空格」开关（关掉后选词上屏不再补尾随空格）
+  - name: auto_space
+    reset: 1
+    states: [ 自动空格关, 自动空格开 ]
   # >>> ai_profile auto
   - name: ai_profile
     options: [ "ai_minimax", "ai_openai", "ai_deepseek" ]

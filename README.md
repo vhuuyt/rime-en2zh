@@ -138,6 +138,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 | **`Ctrl+Delete`** | 删掉这个 AI 补录的词（基库词不受影响），删完候选框收起 |
 | **`Tab`** | 释义超过窗口宽度时往前滚（每次 4 字，可调） |
 | `Ctrl+Shift+A` | AI 总开关 |
+| `F4` 选单 | **自动空格**开关（选词后要不要补尾随空格，临时切换）、AI 档位、AI 开关 |
 
 ### 通用
 

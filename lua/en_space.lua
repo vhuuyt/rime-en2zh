@@ -15,8 +15,11 @@
 --
 -- 这里改在**提交那一刻**处理：拿当前高亮候选的文本，自己 commit，然后吃掉按键。
 --
--- 开关：en_ai/auto_space      1 = 开（默认），0 = 关
---      en_ai/auto_space_keys 触发补空格的键（默认 "space,Return"）
+-- 开关（两级）：
+--   * F4 选单里的「自动空格」开关 —— schema switches 里的 auto_space，
+--     运行时可用，随时切（临时）：关掉后选词不再补空格。
+--   * en_ai/auto_space: 0    —— yaml 里的总开关，彻底关（F4 开关也不起作用）。
+--   en_ai/auto_space_keys    触发补空格的键（默认 "space,Return"）
 --
 -- 挂载：english.schema.yaml → engine/processors 的 lua_processor@*en_space
 
@@ -32,7 +35,8 @@ end
 
 function M.init(env)
   local cfg = env.engine.schema.config
-  env.auto = (cfg_str(cfg, "en_ai/auto_space") or "1") ~= "0"
+  -- 总开关（yaml 里改；F4 那个是运行时开关）
+  env.master = (cfg_str(cfg, "en_ai/auto_space") or "1") ~= "0"
   env.keys = {}
   for name in (cfg_str(cfg, "en_ai/auto_space_keys") or "space,Return"):gmatch("[^,%s]+") do
     env.keys[name] = true
@@ -40,9 +44,12 @@ function M.init(env)
 end
 
 function M.func(key, env)
-  if not env.auto then return 2 end
+  if not env.master then return 2 end
   local ctx = env.engine.context
   if not ctx or not ctx:is_composing() then return 2 end
+  -- F4 选单里的开关（schema switches 的 auto_space，默认开）
+  local ok, on = pcall(function() return ctx:get_option("auto_space") end)
+  if ok and not on then return 2 end
   if not env.keys[key:repr()] then return 2 end
 
   -- 高亮候选优先；连候选都没有（生僻词）时退回原始输入

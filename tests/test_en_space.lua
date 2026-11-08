@@ -26,12 +26,15 @@ end
 local function mk_env(opts)
   opts = opts or {}
   local state = { committed = nil, cleared = 0, refreshed = 0 }
+  local options = opts.options or { auto_space = true }
   local ctx = {
     input = opts.input or "",
     _composing = (opts.composing ~= false),
     _cand = opts.cand,
     is_composing = function(self) return self._composing end,
     get_selected_candidate = function(self) return self._cand end,
+    get_option = function(self, name) return options[name] and true or false end,
+    set_option = function(self, name, v) options[name] = v and true or false end,
     clear = function(self) state.cleared = state.cleared + 1 end,
     refresh_non_confirmed_composition = function(self) state.refreshed = state.refreshed + 1 end,
   }
@@ -142,6 +145,21 @@ check("auto_space_keys 只写 space 时 Return 不补", r13 == 2 and st13.commit
 local env14, st14 = mk_env({ cand = mk_cand("Typst") })
 M.func(mk_key("space"), env14)
 check("大写词补空格", st14.committed == "Typst ", "[" .. tostring(st14.committed) .. "]")
+
+-- 13. F4 选单里的「自动空格」开关关掉 → 不补
+local env15, st15 = mk_env({ cand = mk_cand("hello"), options = { auto_space = false } })
+local r15 = M.func(mk_key("space"), env15)
+check("F4 关掉自动空格后不补", r15 == 2 and st15.committed == nil, "r=" .. tostring(r15))
+
+-- 14. 总开关关掉（en_ai/auto_space: 0）→ 即使 F4 开着也不补
+local env16, st16 = mk_env({ cand = mk_cand("hello"), auto_space = "0", options = { auto_space = true } })
+local r16 = M.func(mk_key("space"), env16)
+check("yaml 总开关关掉后不补", r16 == 2 and st16.committed == nil, "r=" .. tostring(r16))
+
+-- 15. F4 开着（默认）→ 正常补
+local env17, st17 = mk_env({ cand = mk_cand("hello"), options = { auto_space = true } })
+M.func(mk_key("space"), env17)
+check("F4 开着时正常补", st17.committed == "hello ", "[" .. tostring(st17.committed) .. "]")
 
 print("")
 if failed == 0 then
