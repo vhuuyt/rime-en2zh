@@ -81,6 +81,8 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 ├── default.custom.yaml          方案列表（双拼 / 朙月 / 英文模式）、打开选单的热键
 ├── double_pinyin_mspy.custom.yaml   双拼：挂 lua 组件、标点、词库
 ├── luna_pinyin.custom.yaml          朙月拼音：同上
+├── weasel.custom.yaml               Windows（Weasel）专属：皮肤 / 按应用 ascii_mode
+├── squirrel.custom.yaml             macOS（Squirrel）专属：皮肤 / 按应用 ascii_mode
 ├── english.schema.yaml              英文模式（独立方案，自带 lua 挂载）
 ├── ai_config.json               ★ 大模型配置（多个 AI 档位都写这里，含 key，已 gitignore）
 ├── en.dict.yaml                 英文词库入口（只有 import_tables，正文在 dicts/ 里）

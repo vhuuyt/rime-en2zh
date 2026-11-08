@@ -104,3 +104,29 @@ lua test_select_character.lua  # 以词定字
 ```
 
 三个脚本只依赖标准 Lua（5.1+，用到 `utf8`），不依赖小狼毫进程。
+
+## 7. iCloud 同步目录实况（`sync_dir` 里都是什么）
+
+`sync_dir` 设的是 `iCloudDrive/Rime/`，里面按 `installation_id` 分目录，**每端各写自己那份**：
+
+| 目录 | 来源 | 里面有什么 | 状态 |
+|---|---|---|---|
+| `Rime_Squirrel/` | macOS | 顶层 `*.yaml` + `*.txt`（`squirrel.custom.yaml` 只在这里有） | 活的（会随 Mac 部署刷新） |
+| `Rime-Win-AMD/` | 这台 Windows | 同上 + 旧的 `ecdict/chem_ecdict/ai_ecdict.dict.yaml`（已挪进 `dicts/`） | 停在 2026-11-07，早于 Shift 切换和词库重构 |
+| `Rime-Win/` | 早期 Windows | `distribution_version: 0.14.3`、`rime_version: 1.5.3` | 2026-05 的化石，忽略 |
+| `ibus-rime/` | 早期 Linux | 还带着 `easy_en.*`、`ibus_rime.custom.yaml` | 2026-06 的化石，忽略 |
+
+关键点（librime 的 `BackupConfigFiles` 实现）：
+
+* **只备份用户目录顶层的 `*.yaml` 和 `*.txt`** —— `lua/`、`scripts/`、`dicts/`、`docs/` 都不在里面，
+  所以「配置同步了、但 lua 没跟着走」是必然的，别指望 sync_dir 当代码同步。
+* **只有上传，没有回铺**：A 端的改动不会自动长到 B 端。
+* 所以 `sync_dir` 只能当**快照 / 备份**看，源码仍以 git 仓库为准。
+
+判断某端是不是最新，看它 `english.schema.yaml` 里这一行在不在 `processors`（而不是 `filters`）：
+
+```yaml
+    - lua_processor@*en_space           # 选词上屏时自动补尾随空格
+```
+
+在 `filters` 里就是旧的坏版本（filter 改 `cand.text` 对 `Phrase` 候选无效，见 `ENGLISH-LOOKUP.md`）。
