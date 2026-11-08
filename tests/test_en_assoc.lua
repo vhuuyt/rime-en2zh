@@ -140,6 +140,10 @@ yielded = {}
 M.func(mk_input({}), env)
 check("大写词补出单词候选", #yielded == 1 and yielded[1].text == "Info",
       yielded[1] and yielded[1].text or "nil")
+-- 补出来的候选注释必须是 ""，不能是 nil：librime-lua 的 Candidate() 收到 nil 会抛
+-- "bad argument #6 (string expected, got nil)"，那条候选直接消失
+check("补出来的候选注释是空串而不是 nil", yielded[1] and yielded[1].comment == "",
+      yielded[1] and tostring(yielded[1].comment) or "nil")
 
 -- 5. 没有候选时补一个单词候选（AI 词）
 env.engine.context.input = "typst"

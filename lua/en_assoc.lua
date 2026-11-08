@@ -223,8 +223,10 @@ function M.func(input, env)
   if not seen_exact and input_text:match(WORD_RE) then
     local meaning = meaning_for(env, input_text) or dropped
     local seg = back_segment(ctx)
+    -- 注意：Candidate() 的第 5 个参数必须是字符串，传 nil 会让 librime-lua
+    -- 报 "bad argument #6 (string expected, got nil)" 并且这条候选消失
     local cand = Candidate("en_ai", seg and seg.start or 0,
-                           seg and seg._end or #input_text, input_text, meaning)
+                           seg and seg._end or #input_text, input_text, meaning or "")
     cand.quality = 0.05
     if meaning then
       apply_comment(cand, meaning)
