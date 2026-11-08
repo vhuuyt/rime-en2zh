@@ -116,28 +116,31 @@ local function check(name, cond, detail)
   end
 end
 
+-- 本地词库（mock）
+local function write_base(rows, ver)
+  local f = io.open(bridge .. "/ecdict.dict.yaml", "w")
+  f:write("#v", ver or "1", "\n")
+  for _, r in ipairs(rows) do f:write(r, "\n") end
+  f:close()
+end
+write_base({ "hello\thello\t10", "interj. 喂；嘿\thello\t0",
+              "info\tinfo\t10", "n. 信息；资料\tinfo\t0" }, 1)
+
 print("== en_ai 测试 (" .. bridge .. ") ==")
 
 -- ---------- 请求侧 ----------
+-- 现在 AI 只由 Tab 触发：打字过程中不应该有任何文件写入
 local env, ctx = mk_env(req, { input = "hel" })
-local r = req.func(mk_key("l"), env)          -- 输入变成 hello 之后的一次按键
+local r = req.func(mk_key("l"), env)
 check("处理器不吞键（返回 2）", r == 2, "r=" .. tostring(r))
 ctx.input = "hello"
 req.func(mk_key("o"), env)
-local w, d = read_request()
-check("写出 request.txt 的单词", w == "hello", "got=" .. tostring(w))
-check("写出 delay_ms", d == "900", "got=" .. tostring(d))
-
--- 同一个输入不重复写
-os.remove(bridge .. "/request.txt")
-req.func(mk_key("o"), env)
-check("输入未变化不重写", read_request() == nil)
+check("打字不再写 request.txt", read_request() == nil)
 
 -- 太短的词不写
 ctx.input = "h"
-env.last_input = ""
 req.func(mk_key("h"), env)
-check("短于 min_input_len 不请求", read_request() == nil)
+check("打字不写 request.txt", read_request() == nil)
 
 -- F24 触发重绘并被吞掉
 env, ctx = mk_env(req, { input = "hello" })
@@ -149,14 +152,6 @@ check("F24 触发候选重绘", ctx.refreshed == 1, "n=" .. tostring(ctx.refresh
 env, ctx = mk_env(req, { input = "hello", ai = false })
 req.func(mk_key("o"), env)
 check("AI 关闭不请求", read_request() == nil)
-
--- 显式触发键：delay 写成 0
-env, ctx = mk_env(req, { input = "hello", trigger = "Control+Return" })
-ctx.input = "hello"
-r = req.func(mk_key("Control+Return"), env)
-local _, d2 = read_request()
-check("显式触发返回 1", r == 1, "r=" .. tostring(r))
-check("显式触发把 delay 设为 0", d2 == "0", "got=" .. tostring(d2))
 
 -- AI 档位跟着方案选单（单选组 ai_profile）走，不再有快捷键
 local function profile()
@@ -293,6 +288,32 @@ local r1 = req.func(mk_key("Tab"), env)
 check("词不匹配时 Tab 放行", r1 == 2, "r=" .. tostring(r1))
 
 
+-- Tab 三种情况
+-- (a) 有长释义 → 滚动（scroll.txt 里有当前词）
+-- (b) 有短释义 → 放行
+-- (c) 没有释义 → 触发 AI 请求（request.txt 写成 delay 0）
+env, ctx = mk_env(req, { input = "hello" })
+write_scroll(0, "hello")
+local ra = req.func(mk_key("Tab"), env)
+check("有长释义：Tab 被吃掉并滚动", ra == 1, "r=" .. tostring(ra))
+
+env, ctx = mk_env(req, { input = "hello" })
+os.remove(bridge .. "/scroll.txt")
+os.remove(bridge .. "/request.txt")
+local rb = req.func(mk_key("Tab"), env)
+local reqw = read_request()
+check("有短释义：Tab 放行", rb == 2, "r=" .. tostring(rb))
+check("有短释义：不发 AI 请求", reqw == nil, "got=" .. tostring(reqw))
+
+env, ctx = mk_env(req, { input = "zzzqqq" })
+os.remove(bridge .. "/scroll.txt")
+os.remove(bridge .. "/request.txt")
+local rc = req.func(mk_key("Tab"), env)
+local w2, d2 = read_request()
+check("没有释义：Tab 触发 AI", rc == 1, "r=" .. tostring(rc))
+check("AI 请求是当前词", w2 == "zzzqqq", "got=" .. tostring(w2))
+check("AI 请求 delay=0（立即发）", d2 == "0", "got=" .. tostring(d2))
+
 -- 非字母键（导航/选词）要写暂停标记，让跑马灯停下来
 env, ctx = mk_env(req, { input = "hello" })
 os.remove(bridge .. "/marquee_pause.txt")
@@ -308,15 +329,6 @@ check("字母键不写暂停标记", pf == nil)
 if pf then pf:close() end
 
 -- ---------- 候选侧 ----------
--- 本地词库（mock）
-local function write_base(rows, ver)
-  local f = io.open(bridge .. "/ecdict.dict.yaml", "w")
-  f:write("#v", ver or "1", "\n")
-  for _, r in ipairs(rows) do f:write(r, "\n") end
-  f:close()
-end
-write_base({ "hello\thello\t10", "interj. 喂；嘿\thello\t0",
-              "info\tinfo\t10", "n. 信息；资料\tinfo\t0" }, 1)
 local yielded = {}
 function Candidate(typ, start, end_, text, comment)
   return { type = typ, start = start, _end = end_, text = text, comment = comment, quality = 0 }

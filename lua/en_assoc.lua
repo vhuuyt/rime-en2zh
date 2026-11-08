@@ -87,9 +87,19 @@ local function read_response(dir)
 end
 
 -- 释义来源：桥刚返回的译文优先，其次词库（本地 + AI 补录），大写词按小写回退
+-- response.txt 每次候选生成只读一次（缓存在 env 里），不是每个候选读一次
+local function response_of(env)
+  if env.resp_word == nil then
+    local word, got = read_response(env.dir)
+    env.resp_word = word or ""
+    env.resp_text = got or ""
+  end
+  return env.resp_word, env.resp_text
+end
+
 local function meaning_for(env, text)
-  local word, got = read_response(env.dir)
-  if word == text and got and got ~= "" then
+  local word, got = response_of(env)
+  if word == text and got ~= "" then
     return got
   end
   local slot = env.words[text]
@@ -167,6 +177,8 @@ function M.func(input, env)
   local ctx = env.engine.context
 
   refresh(env)
+  env.resp_word = nil        -- 本轮重新读一次 response.txt
+  env.resp_text = nil
 
   local input_text = ctx.input or ""
   local offset, scroll_input = read_scroll(env)

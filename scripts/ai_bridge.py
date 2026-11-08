@@ -423,20 +423,21 @@ def inject_refresh():
 
 # ---------------------------------------------------------------- 文件协议
 def read_request(path):
-    """返回 (word, delay_ms) 或 (None, None)。"""
+    """返回 (word, delay_ms, seq) 或 (None, None, None)。"""
     try:
         with open(path, encoding="utf-8") as f:
             word = (f.readline() or "").strip()
             delay = (f.readline() or "").strip()
+            seq = (f.readline() or "").strip()
     except OSError:
-        return None, None
+        return None, None, None
     if not word:
-        return None, None
+        return None, None, None
     try:
         delay_ms = int(delay)
     except ValueError:
         delay_ms = None
-    return word, delay_ms
+    return word, delay_ms, seq
 
 
 def write_response(d, word, text):
@@ -815,6 +816,7 @@ def serve(cfg, fallback_delay):
         log(f"跑马灯已启用（tick {cfg.get('tick_ms', 200)}ms）")
 
     last_word = None
+    last_seq = None
     pending_word = None
     due = 0.0
     done_word = None
@@ -826,7 +828,7 @@ def serve(cfg, fallback_delay):
     last_cfg_check = 0.0
 
     while True:
-        word, delay_ms = read_request(req)
+        word, delay_ms, req_seq = read_request(req)
         now = time.time()
         try:                 # IME 里按了「切换 AI」→ 读档位
             pf = os.path.join(d, "ai_profile.txt")
@@ -865,8 +867,9 @@ def serve(cfg, fallback_delay):
                     log("config.json 已改动，重载完成")
                 except Exception as e:      # 配置写坏了不要拖垮桥
                     log(f"配置重载失败（继续用旧的）: {e}")
-        if word != last_word:
+        if word != last_word or req_seq != last_seq:
             last_word = word
+            last_seq = req_seq
             pending_word = word if (word and len(word) >= min_len) else None
             wait = (delay_ms if delay_ms is not None else cfg.get("delay_ms", fallback_delay))
             due = now + max(0, int(wait)) / 1000.0
@@ -955,7 +958,7 @@ def selftest():
         req = os.path.join(d, "request.txt")
         with open(req, "w", encoding="utf-8") as f:
             f.write("hello\n900\n0\n")
-        assert read_request(req) == ("hello", 900)
+        assert read_request(req) == ("hello", 900, "0")
         write_response(d, "hello", "你好")
         with open(os.path.join(d, "response.txt"), encoding="utf-8") as f:
             assert f.read() == "hello\n你好\n"

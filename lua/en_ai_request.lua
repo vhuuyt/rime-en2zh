@@ -11,6 +11,9 @@
 
 local M = {}
 
+-- 词表（共享模块）：用来判断"这个词有没有本地释义"
+local dict_data = require("en_dict_data")
+
 local function default_dir()
   local tmp = os.getenv("TEMP") or os.getenv("TMPDIR") or os.getenv("TMP") or "/tmp"
   tmp = tmp:gsub("\\+$", "")
@@ -51,12 +54,11 @@ function M.init(env)
     end
   end
   env.delete_close = (cfg_str(cfg, "en_ai/delete_close") or "1") ~= "0"
-  env.ai_dict = cfg_str(cfg, "en_ai/ai_dict")
-  if not env.ai_dict then
-    local appdata = os.getenv("APPDATA")
-    env.ai_dict = appdata and (appdata:gsub("\\", "/") .. "/Rime/dicts/ai_ecdict.dict.yaml")
-                     or ((os.getenv("HOME") or ".") .. "/Library/Rime/dicts/ai_ecdict.dict.yaml")
-  end
+  local appdata = os.getenv("APPDATA")
+  local rime_dir = appdata and (appdata:gsub("\\", "/") .. "/Rime")
+                    or ((os.getenv("HOME") or ".") .. "/Library/Rime")
+  env.ai_dict = cfg_str(cfg, "en_ai/ai_dict") or (rime_dir .. "/dicts/ai_ecdict.dict.yaml")
+  env.base_dict = cfg_str(cfg, "en_ai/base_dict") or (rime_dir .. "/dicts/ecdict.dict.yaml")
 
   env.last_input = ""
 end
@@ -183,21 +185,39 @@ function M.func(key, env)
     -- 没找到释义：继续往下走（可能还配了 en_ai/trigger）
   end
 
-  -- Tab = 把过长的释义往左滚一格（只在联想模式、且当前词确实有长释义时生效）
+  -- Tab 有两个用途，看当前词有没有本地释义：
+  --   有长释义 → 往左滚一格（filter 会把 scroll.txt 写好）
+  --   没有释义 → 触发一次 AI 查询（delay 0，桥立即发）
+  --   有释义但不长 → 放行给应用
   if repr == env.tab_key and ctx:is_composing() then
-    local f = io.open(env.scroll_file, "r")
-    if f then
-      local offset = tonumber(f:read("*l") or "") or 0
-      local input = f:read("*l") or ""
-      f:close()
-      if input == (ctx.input or "") and input ~= "" then
-        local out = io.open(env.scroll_file, "w")
-        if out then
-          out:write(tostring(offset + env.tab_step), "\n", input, "\n")
-          out:close()
+    local cur = ctx.input or ""
+    if cur ~= "" then
+      -- 1) 有长释义？scroll.txt 是 filter 写的
+      local f = io.open(env.scroll_file, "r")
+      if f then
+        local offset = tonumber(f:read("*l") or "") or 0
+        local scroll_input = f:read("*l") or ""
+        f:close()
+        if scroll_input == cur then
+          local out = io.open(env.scroll_file, "w")
+          if out then
+            out:write(tostring(offset + env.tab_step), "\n", cur, "\n")
+            out:close()
+          end
+          ctx:refresh_non_confirmed_composition()
+          return 1                     -- 吃掉 Tab，不再传给应用
         end
-        ctx:refresh_non_confirmed_composition()
-        return 1                     -- 吃掉 Tab，不再传给应用
+      end
+      -- 2) 本地有释义 → Tab 无事可做，放行
+      local words = dict_data.load(env.base_dict, env.ai_dict)
+      if dict_data.meaning(words, cur) then
+        return 2
+      end
+      -- 3) 没有释义 → 让桥去问 AI（立刻，不等停顿）
+      if #cur >= env.min_len then
+        env.seq = (env.seq or 0) + 1
+        write_request(env.dir, cur, 0, env.seq)
+        return 1
       end
     end
   end
@@ -235,22 +255,8 @@ function M.func(key, env)
     end
   end
 
-  local input = ctx.input or ""
-  if input == env.last_input then
-    return 2
-  end
-  env.last_input = input
-  if #input < env.min_len then
-    return 2
-  end
-
-  if env.trigger ~= "" and repr == env.trigger then
-    -- 显式触发：把停顿改成 0，桥接脚本立刻请求
-    write_request(env.dir, input, 0)
-    return 1
-  end
-
-  write_request(env.dir, input, env.delay_ms)
+  -- AI 查询现在只由 Tab 触发（见上面的 Tab 分支），打字过程中不再写 request.txt，
+  -- 所以每次按键没有任何文件写入。
   return 2
 end
 

@@ -1,6 +1,6 @@
 # Rime dictionary
 # encoding: utf-8
-#v1794067578
+#v1794111574
 #
 # AI 补录词库（英文模式）—— 由 ai_bridge.py 自动追加，也可手工删改
 # 格式：文本 <TAB> 编码 <TAB> 权重
@@ -22,12 +22,20 @@ Li	Li	10
 n. 李；锂	Li	0
 Ni	Ni	10
 n. 镍（化学元素符号）	Ni	0
+Ol	Ol	10
+int. 哦；噢	Ol	0
+Olea	Olea	10
+n. 木犀榄属	Olea	0
+Pilog	Pilog	10
+n. 皮洛格	Pilog	0
 Typst	Typst	10
 n. 一种基于 Rust 的现代排版系统…	Typst	0
 Xr	Xr	10
 n. 扩展现实	Xr	0
 Xrd	Xrd	10
 n. X射线衍射	Xrd	0
+abbr	abbr	10
+n./v. 缩写；缩略词	abbr	0
 abbre	abbre	10
 n. 缩写	abbre	0
 ai	ai	10
@@ -42,6 +50,8 @@ cha	cha	10
 n. 茶	cha	0
 china	china	10
 n. 中国；瓷器	china	0
+da	da	10
+n. 爸爸（口语）	da	0
 debian	debian	10
 n. Linux发行版	debian	0
 figma	figma	10
@@ -50,14 +60,22 @@ infor	infor	10
 n. 企业软件公司	infor	0
 jq	jq	10
 n. JSON处理工具	jq	0
+jwuh	jwuh	10
+{"zh":"","pos":""	jwuh	0
+ki	ki	10
+n./int. 日本哲学中的生命能量	ki	0
 la	la	10
 int. 哦；瞧吧	la	0
 li	li	10
 n. 李；锂	li	0
 limps	limps	10
 v./n. 跛行；跛足	limps	0
+ll	ll	10
+v. 将要	ll	0
 ni	ni	10
 n. 镍（化学元素符号）	ni	0
+pilog	pilog	10
+n. 皮洛格	pilog	0
 sa	sa	10
 n. 圣人；灵师	sa	0
 sakura	sakura	10
@@ -70,6 +88,10 @@ veyh	veyh	10
 {"zh":"","pos":""	veyh	0
 vite	vite	10
 n. 黄荆；牡荆属植物	vite	0
+xc	xc	10
+n. 越野滑雪	xc	0
+xq	xq	10
+n. 小学全科	xq	0
 xr	xr	10
 n. 扩展现实	xr	0
 xrd	xrd	10
