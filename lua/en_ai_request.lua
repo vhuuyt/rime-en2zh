@@ -7,8 +7,11 @@
 --   F24          → 桥注入的假按键，只用来触发候选重绘
 --   档位变化      → 把 F4 选单里选中的 AI 档位写进 ai_profile.txt（仅变化时写一次）
 --
--- AI 请求唯一的出口是 Tab（见 write_request）：写一次 request.txt，桥负责计时/联网/写回。
--- 早期版本是「打字停顿 900ms 自动请求」，那样每次按键都得写文件，已废弃。
+-- AI 有两条触发路径，都只是写一次 request.txt，剩下的（计时/联网/写回）交给桥：
+--   1. 打字时自动：每次输入变化写一条（第 2 行 = en_ai/delay_ms），桥发现这个内容
+--      900ms 没再变 → 才发请求。所以"停手一会儿就自动出 AI 释义"。
+--   2. 按 Tab 立刻：第 2 行写 0，桥立即发（本地查不到这个词时才有意义）。
+-- 关掉自动触发（变成只能按 Tab）：en_ai/auto: 0。
 --
 -- 挂载：english.schema.yaml → engine/processors 第一项 lua_processor@*en_ai_request
 
@@ -38,6 +41,8 @@ function M.init(env)
   local dir = cfg_str(cfg, "en_ai/dir")
   if dir then env.dir = dir:gsub("\\", "/"):gsub("/+$", "") end
   env.min_len = tonumber(cfg_str(cfg, "en_ai/min_input_len") or "") or 2
+  env.auto = (cfg_str(cfg, "en_ai/auto") or "1") ~= "0"
+  env.delay_ms = tonumber(cfg_str(cfg, "en_ai/delay_ms") or "") or 900
   env.tab_key = cfg_str(cfg, "en_ai/tab") or "Tab"
   env.tab_step = tonumber(cfg_str(cfg, "en_ai/tab_step") or "") or 4
   env.width = tonumber(cfg_str(cfg, "en_ai/width") or "") or 20
@@ -62,6 +67,7 @@ function M.init(env)
   env.ai_dict = cfg_str(cfg, "en_ai/ai_dict") or (rime_dir .. "/dicts/ai_ecdict.dict.yaml")
 
   env.last_input = ""
+  env.last_requested = nil        -- 上一次写进 request.txt 的词（去重，别重复写同一个）
 end
 
 -- 当前档位由方案选单里的单选组决定（ai_minimax / ai_openai …），
@@ -124,6 +130,18 @@ local function delete_from_ai_dict(path, word)
   w:write(table.concat(out, "\n"), "\n")
   w:close()
   return true
+end
+
+-- processor 在按键**进入组合之前**运行，所以 ctx.input 还是上一帧的值。
+-- 想按"这一下按键之后的词"去请求，就得自己推算一下；否则请求文件里永远是
+-- 少一个字母的词（桥会照着错的词查，甚至把截断的词写进 AI 词库）。
+local function predict_input(cur, repr)
+  local ch = repr:match("^([A-Za-z])$") or repr:match("^Shift%+([A-Za-z])$")
+  if ch then return cur .. ch end
+  if repr == "BackSpace" or repr == "Control+BackSpace" then
+    return cur:sub(1, -2)
+  end
+  return nil                      -- 其他键不改输入
 end
 
 local function write_request(dir, input, delay_ms)
@@ -209,6 +227,7 @@ function M.func(key, env)
 
   if not ctx:is_composing() then
     env.last_input = ""
+    env.last_requested = nil
     return 2
   end
   if not ctx:get_option("ai_translate") then
@@ -228,8 +247,19 @@ function M.func(key, env)
     end
   end
 
-  -- AI 查询现在只由 Tab 触发（见上面的 Tab 分支），打字过程中不再写 request.txt，
-  -- 所以每次按键没有任何文件写入。
+  -- 自动查词：输入变了就写一条请求（请求文件里带着 delay_ms，桥等它稳定下来才发）。
+  -- 每次按键只做一次 ~12 字节的写，且只在"这个词本地没有释义"时才写。
+  if env.auto and ctx:is_composing() then
+    local cur = ctx.input or ""
+    local word = predict_input(cur, repr)
+    -- 不要在这里用"前缀已有释义"来跳过：polar 本身是个词，打 pola→polar 之后
+    -- 后面每个字母都会被跳过，请求文件就永远停在半截词上（查出来是别的词）。
+    -- 认得的词由桥那边判断（skip_local），这边只管如实汇报当前输入。
+    if word and #word >= env.min_len and word ~= env.last_requested then
+      env.last_requested = word
+      write_request(env.dir, word, env.delay_ms)
+    end
+  end
   return 2
 end
 

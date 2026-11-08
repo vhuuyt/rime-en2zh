@@ -42,6 +42,23 @@
 
 **这里没有任何查表动作**：`en_assoc` 靠的是"释义行就排在单词行后面"这个布局，权重（quality）只是用来区分两者的辅助线索。所以输入路径上不需要把 7 万词的词表读进 Lua —— 这正是英文模式首次按键不掉帧的原因。
 
+## AI 什么时候查
+
+两条路，都只是写一次 `request.txt`，剩下的交给桥：
+
+| 触发 | 请求里的 delay | 行为 |
+|---|---|---|
+| 打字时自动 | `en_ai/delay_ms`（默认 900） | 输入变了就写一条；桥发现这个内容 900ms 没再变才发请求 → "停手就出" |
+| 按 <kbd>Tab</kbd> | `0` | 立刻发，不用等（本地查不到这个词时才有意义） |
+
+关掉自动查（只按 Tab 才查）：`en_ai/auto: 0`。
+
+**自动查的结果只进缓存，按 Tab 查的才写进 AI 词库** —— 否则打字打到一半停手（`polar|iton`），
+半截词就会被当成词条存进去。
+
+写请求时用的词是"这一下按键**之后**"的输入：processor 在按键进入组合之前运行，
+所以要自己推算（`predict_input`），否则请求里永远是少一个字母的词。
+
 ### Tab 的三个分支
 
 `lua/en_ai_request.lua` 里按顺序判断：
@@ -71,9 +88,11 @@
 
 拿到结果后桥做三件事：写 `response.txt`、追加 AI 词库（带新 `#v`）、**注入一次 F24**（lua 收到就重绘候选，所以不用你再敲键）。filter 读到 AI 词库的新 `#v` 才重读那个小文件（≤1 次/秒）。
 
-AI 词库**不进 prism**（`en.dict.yaml` 没 import 它）：它只是 filter 的数据源，filter 补候选时
-用的是你敲的原文，查释义时先按原文、再按小写回退 —— 所以词库只存小写就够，
-`LaTeX` / `Latex` / `latex` 都能命中同一份释义，也不用为大小写各存一条。
+AI 词库**不进 prism**（`en.dict.yaml` 没 import 它）：它是 filter 的第二个数据源，
+filter 直接把这些词当候选发出来（精确命中 + 前缀补全，见 `en_ai/ai_completion`）。
+所以**写完词库不需要重新部署** —— 重建 prism 要 1~3 秒，还会有个部署动作，很扎眼。
+查释义时先按你敲的原文、再按小写回退，所以词库只存小写就够，
+`LaTeX` / `Latex` / `latex` 都能命中同一份释义。
 
 省钱的四道闸（都在桥里，顺序执行）：
 
@@ -200,6 +219,7 @@ python scripts/probe.py Hello            # 候选 + 释义
 python scripts/probe.py --pages 0 typ    # 翻到底看全部候选
 python scripts/probe.py --commit Hello   # 上屏文本
 python scripts/probe.py --check          # 10 条冒烟断言，改完东西跑这个
+python scripts/probe.py --auto 5 polariton   # 打字→停手→看桥有没有自动补上释义（真调 API）
 ```
 
 改词库/lua 之后的推荐顺序：`bash tests/run.sh` → 桥自检 → `probe.py --check`。

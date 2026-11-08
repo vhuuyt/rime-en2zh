@@ -21,6 +21,7 @@ import ctypes as C
 import glob
 import os
 import sys
+import time
 
 # ---------------------------------------------------------------- 库与目录
 
@@ -203,6 +204,37 @@ class Rime:
         self.api.destroy_session(self.sid)
         self.api.finalize()
 
+    def type_and_read(self, keys):
+        """打一串键，然后读候选 —— **不**重置组合（--auto 还要接着等桥返回）。"""
+        self.api.clear_composition(self.sid)
+        self.api.simulate_key_sequence(self.sid, keys.encode())
+        c = self._ctx()
+        if c is None:
+            return "", [], 0
+        preedit = c.composition.preedit.decode() if c.composition.preedit else ""
+        out = [((c.menu.candidates[i].text or b"").decode(),
+                (c.menu.candidates[i].comment or b"").decode(),
+                i == c.menu.highlighted_candidate_index)
+               for i in range(c.menu.num_candidates)]
+        page_size = c.menu.page_size
+        self.api.free_context(C.byref(c))
+        return preedit, out, page_size
+
+    def refresh_and_read(self):
+        """在同一个组合里敲 F24（lua 收到就重绘），然后读候选，不重置组合。"""
+        self.api.simulate_key_sequence(self.sid, b"{F24}")
+        c = self._ctx()
+        if c is None:
+            return "", [], 0
+        preedit = c.composition.preedit.decode() if c.composition.preedit else ""
+        out = [((c.menu.candidates[i].text or b"").decode(),
+                (c.menu.candidates[i].comment or b"").decode(),
+                i == c.menu.highlighted_candidate_index)
+               for i in range(c.menu.num_candidates)]
+        page_size = c.menu.page_size
+        self.api.free_context(C.byref(c))
+        return preedit, out, page_size
+
     def _ctx(self):
         c = Context()
         c.data_size = C.sizeof(Context)
@@ -282,6 +314,29 @@ def cmd_commit(rime, words):
     return 0 if ok else 1
 
 
+def cmd_auto(rime, word, seconds):
+    """模拟打字 → 停手 → 看常驻桥有没有把 AI 释义补上来（会真的调一次 API）。
+
+    桥返回后用全局 F24 触发重绘，但那个按键是发给前台窗口的，进不了这个探测会话，
+    所以这里在会话里自己再敲一次 F24（lua 收到 F24 就重绘候选）。
+    """
+    print(f"  打字 {word!r}，然后等 {seconds}s（桥：停手 delay_ms → 请求 API → 写回）...")
+    preedit, cands, _ = rime.type_and_read(word)
+    print(f"  等之前：preedit={preedit!r} 候选 {len(cands)} 条"
+          + (f"，comment={cands[0][1]!r}" if cands else ""))
+    time.sleep(seconds)
+    preedit, cands, _ = rime.refresh_and_read()
+    print(f"  等之后：候选 {len(cands)} 条")
+    ok = False
+    for i, (text, comment, hl) in enumerate(cands, 1):
+        print(f"   {i}. {text!r}   comment={comment!r}{'  <<<' if hl else ''}")
+        if comment:
+            ok = True
+    if not ok:
+        print("  没有释义：桥没跑？没配 api_key？还是 delay_ms 还没到？看 bridge.log")
+    return 0 if ok else 1
+
+
 def cmd_check(rime):
     """改完词库/方案跑这个：几条最基本的行为必须成立。"""
     fails = []
@@ -335,6 +390,8 @@ def main():
     ap.add_argument("--commit", action="store_true", help="看上屏文本（自动补一个空格）")
     ap.add_argument("--pages", type=int, default=1, help="翻几页；0 = 翻到底（默认 1）")
     ap.add_argument("--check", action="store_true", help="跑冒烟断言")
+    ap.add_argument("--auto", type=float, metavar="秒", default=0,
+                    help="打字后等 N 秒，验证桥自动补 AI 释义（会真的调一次 API）")
     ap.add_argument("--verbose", action="store_true", help="显示 librime 的 ERROR 日志")
     args = ap.parse_args()
 
@@ -342,6 +399,10 @@ def main():
     try:
         if args.check:
             return cmd_check(rime)
+        if args.auto:
+            if not args.words:
+                ap.error("--auto 需要一个词")
+            return cmd_auto(rime, args.words[0], args.auto)
         if not args.words:
             ap.print_help()
             return 2

@@ -4,7 +4,8 @@
 
 * **英文模式**：中文方案里单击 <kbd>Shift</kbd> → 切到英文模式，打字即出候选 —— 英文原词 + 中文释义（释义贴在候选右边，超宽自动滚动）。
 * **本地词库**：ECDICT 4 万高频词 + 3 万时态变形 + 1.5 万化学词条（`titrate`/`esterify`…），`Hello` 这种首字母大写也查得到。离线可用、不花钱、**打字路径零文件 I/O**。
-* **大模型兜底**：本地查不到的词，按 <kbd>Tab</kbd> 让常驻桥进程问一次 API，结果立刻成为候选，并写回词库（下次直接命中本地）。
+* **大模型兜底**：本地查不到的词，停手约 0.9 秒自动问一次 API（或按 <kbd>Tab</kbd> 立刻问），结果成为候选；
+  按 Tab 查的词会写回 AI 词库，以后直接命中本地。
 * **附带**：双拼 / 朙月拼音方案、Typst 片段词典、以词定字（写作向彩蛋，不影响主线）。
 
 ```
@@ -132,7 +133,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 | **空格 / 回车** | 上屏英文单词（**自动带一个尾随空格**；F4 里可关） |
 | **`Ctrl+Enter`** | 上屏当前高亮候选的**中文释义** |
 | **`Ctrl+Delete`** | 删掉这个 AI 补录的词（基库 ECDICT 的词不受影响），删完候选框收起。macOS 主键盘用 `Ctrl+BackSpace` |
-| **`Tab`** | 三选一：释义超宽 → 往前滚 4 字；有短释义 → 放行给应用；**本地没这个词 → 立刻问一次 AI** |
+| **`Tab`** | 三选一：释义超宽 → 往前滚 4 字；有短释义 → 放行给应用；**本地没这个词 → 立刻问一次 AI**（自动查是停手 0.9 秒后触发，不必按 Tab） |
 | `F4` 选单 | **自动空格**开关（会记住）、AI 档位（✓ 当前）、AI 开关 |
 
 ### 通用
@@ -152,7 +153,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 |---|---|---|---|
 | `dicts/ecdict.dict.yaml` | 7.4 万编码 / 14.8 万行（4 万词 + 3 万变形），5.7MB | 不能 | 想换规模/释义时重新生成 |
 | `dicts/chem_ecdict.dict.yaml` | 1.5 万编码 / 3 万行，1.0MB | 不能 | 同上（一条命令一起生成） |
-| `dicts/ai_ecdict.dict.yaml` | AI 查过的词（**一律存小写**，打 `LaTeX`/`Latex`/`latex` 都能命中） | **能**（`Ctrl+Delete`） | 桥自动写入（带 `#v` 版本号） |
+| `dicts/ai_ecdict.dict.yaml` | AI 查过且你按过 Tab 的词（**一律存小写**，打 `LaTeX`/`Latex`/`latex` 都能命中） | **能**（`Ctrl+Delete`） | 按 Tab 查词时桥自动写入（带 `#v` 版本号） |
 | `dicts/sogouw` 等 | **中文词库**（双拼用）：搜狗、THUOCL、语料、符号、多音字 | 不能 | 换词库时替换文件 |
 
 重新生成英文库（中文库不用动）：
@@ -223,6 +224,7 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 * 盯 `lua/*.lua` → 改了自动重启输入法（librime-lua 每个引擎会话只加载一次模块）
 * 盯 `*.custom.yaml` / `*.schema.yaml` → 改了自动重新部署
 * 盯 `ai_config.json` → 改了自动重读、必要时更新选单
+* 盯 `scripts/ai_bridge.py` → **不**自动重载（它自己就在跑），只在日志里提醒你重启
 
 ---
 
@@ -242,7 +244,9 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 
 | 现象 | 先看哪里 |
 |---|---|
-| 按 Tab 没出 AI 释义 | 桥有没有跑（`bridge.log`）；档位有没有填 `base_url`（日志会写「跳过请求」）；词太短（`min_input_len` 默认 2） |
+| 不按 Tab 也不出 AI 释义 | 桥有没有跑（`bridge.log`）；档位有没有填 `base_url`；词太短（`min_input_len` 默认 2）；`en_ai/auto` 是不是 0 |
+| 出了 AI 释义但候选栏没刷新 | 桥返回后会注入一次 F24 触发重绘；如果某个应用吃掉 F24，下一键就会刷出来 |
+| 改了 `scripts/ai_bridge.py` 没生效 | 桥是常驻进程，**要重启**（`bridge.log` 里会提醒）；改 `lua/*.lua` 才是自动生效 |
 | 本地词也不出释义 | 是否已在「英文模式」（不是 `ascii_mode` 直通）；`build/en.table.bin` 是否比源文件新 |
 | 改了 lua 没生效 | 桥会自动重启输入法；没跑桥就手动重启小狼毫（改 lua 光部署无效） |
 | 部署失败 / 反复部署 | `%TEMP%\rime.weasel\*.log`；用户目录里有没有名叫 `nul` 的文件（会让部署崩） |

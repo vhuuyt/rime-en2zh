@@ -129,15 +129,14 @@ local function meaning_for(env, text)
     slot = ai_dict(env)[lower]
     if slot and slot.meaning then return slot.meaning end
   end
-  -- 桥刚返回的译文（每个词只查一次）
-  if env.resp_checked ~= text then
-    env.resp_checked = text
-    local word, got = read_response(env.dir)
-    if word == text and got and got ~= "" then
-      env.resp_word, env.resp_text = word, got
-    end
+  -- 桥刚返回的译文。这里**不能**按词记忆"查过了"：桥的回应总是后到的，
+  -- 打字过程中那次渲染读到的还是上一个词的译文，若把结论缓存下来，
+  -- 之后 F24 触发的那次重绘就不会再读，表现就是"查到了但要再敲一下才出现"。
+  -- 只有本地查不到的词才会走到这儿，读一个两行的小文件，代价可以接受。
+  local word, got = read_response(env.dir)
+  if word == text and got and got ~= "" then
+    return got
   end
-  if env.resp_word == text then return env.resp_text end
   return nil
 end
 
@@ -155,11 +154,9 @@ function M.init(env)
   env.ai_path = cfg_str(cfg, "en_ai/ai_dict") or (rime_dir() .. "/dicts/ai_ecdict.dict.yaml")
   env.width = tonumber(cfg_str(cfg, "en_ai/width") or "") or 20
   env.marquee = (cfg_str(cfg, "en_ai/marquee") or "1") ~= "0"
+  env.ai_completion = tonumber(cfg_str(cfg, "en_ai/ai_completion") or "") or 5
   env.ai_ver = nil
   env.ai_words = nil
-  env.resp_checked = nil
-  env.resp_word = nil
-  env.resp_text = nil
 end
 
 local function strip_mark(text)
@@ -218,20 +215,55 @@ function M.func(input, env)
     yield(pending)
   end
 
-  -- 词库里完全没有这个词 → 补一个单词候选，保证空格上屏的是单词
-  -- （释义可能来自 AI 词库 / 桥的返回；没有释义也照样给一个词，方便直接上屏）
-  if not seen_exact and input_text:match(WORD_RE) then
-    local meaning = meaning_for(env, input_text) or dropped
-    local seg = back_segment(ctx)
-    -- 注意：Candidate() 的第 5 个参数必须是字符串，传 nil 会让 librime-lua
-    -- 报 "bad argument #6 (string expected, got nil)" 并且这条候选消失
-    local cand = Candidate("en_ai", seg and seg.start or 0,
-                           seg and seg._end or #input_text, input_text, meaning or "")
-    cand.quality = 0.05
-    if meaning then
+  -- AI 词库（桥自动补录的那些词）在这里"当候选用"：
+  --   * 精确命中：保证空格上屏的是这个词（本地词库没有它）
+  --   * 前缀命中：打 polari 也能看到 polariton，效果和词库里的词一样
+  -- 所以不需要把 ai_ecdict 并进 en.dict.yaml —— 也就不需要在每次写词库之后
+  -- 重新部署（重建 prism 要 1~3 秒，还会有个部署动作，很扎眼）。
+  if input_text:match(WORD_RE) then
+    local seg = back_segment(env)
+    local start = seg and seg.start or 0
+    local stop = seg and seg._end or #input_text
+    local cap = input_text:match("^%u") ~= nil
+
+    local function emit_ai(word, meaning, quality)
+      if not meaning or meaning == "" then return end
+      local text = word
+      if cap and text:match("^%l") then      -- 你敲的是大写开头，显示也跟着大写
+        text = text:sub(1, 1):upper() .. text:sub(2)
+      end
+      local cand = Candidate("en_ai", start, stop, text, "")
+      cand.quality = quality
       apply_comment(cand, meaning)
+      yield(cand)
     end
-    yield(cand)
+
+    if not seen_exact then
+      -- 精确：文本用你敲的原样（大小写），释义来自 AI 词库或桥刚返回的
+      local meaning = meaning_for(env, input_text) or dropped
+      local cand = Candidate("en_ai", start, stop, input_text, "")
+      cand.quality = 0.05
+      if meaning then apply_comment(cand, meaning) end
+      yield(cand)
+    end
+
+    -- 前缀补全：AI 词库里以当前输入开头的词（最多 ai_completion 条）
+    if env.ai_completion > 0 then
+      local lower = input_text:lower()
+      local hits = {}
+      for word, slot in pairs(ai_dict(env)) do
+        if #word > #lower and word:sub(1, #lower) == lower and slot.meaning then
+          hits[#hits + 1] = word
+        end
+      end
+      table.sort(hits, function(a, b)
+        if #a ~= #b then return #a < #b end
+        return a < b
+      end)
+      for i = 1, math.min(#hits, env.ai_completion) do
+        emit_ai(hits[i], ai_dict(env)[hits[i]].meaning, 0.04)
+      end
+    end
   end
 end
 

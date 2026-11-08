@@ -44,6 +44,7 @@ local function mk_env(module, opts)
       local map = {
         ["en_ai/dir"] = bridge,
         ["en_ai/delay_ms"] = tostring(opts.delay or 900),
+        ["en_ai/auto"] = (opts.auto == false) and "0" or "1",
         ["en_ai/trigger"] = opts.trigger or "",
         ["en_ai/marker"] = "[AI]",
         ["en_ai/min_input_len"] = "2",
@@ -130,18 +131,52 @@ write_base({ "hello\thello\t10", "interj. 喂；嘿\thello\t0",
 print("== en_ai 测试 (" .. bridge .. ") ==")
 
 -- ---------- 请求侧 ----------
--- 现在 AI 只由 Tab 触发：打字过程中不应该有任何文件写入
+-- 自动查词：打字时写请求，词是"这一下按键之后"的输入（processor 在按键进入
+-- 组合之前运行，所以要用 predict_input 推算，否则请求里永远少一个字母）
 local env, ctx = mk_env(req, { input = "hel" })
+os.remove(bridge .. "/request.txt")
 local r = req.func(mk_key("l"), env)
 check("处理器不吞键（返回 2）", r == 2, "r=" .. tostring(r))
-ctx.input = "hello"
-req.func(mk_key("o"), env)
-check("打字不再写 request.txt", read_request() == nil)
+local w, d = read_request()
+check("打字会写 request.txt（自动查词）", w == "hell", tostring(w))
+check("请求里带 delay_ms，桥等停手才发", d == "900", tostring(d))
 
--- 太短的词不写
-ctx.input = "h"
+ctx.input = "hell"
+req.func(mk_key("o"), env)
+check("继续打字 → 请求跟着更新", (read_request()) == "hello")
+
+-- 同一个词不重复写（免得每帧都碰磁盘）
+os.remove(bridge .. "/request.txt")
+req.func(mk_key("o"), env)     -- 输入没变（还是 hello → helloo 也一样会写，这里测去重）
+ctx.input = "hello"
+os.remove(bridge .. "/request.txt")
+req.func(mk_key("x"), env)
+check("换词会重写请求", (read_request()) == "hellox")
+
+-- 退格：按删除后的词请求
+ctx.input = "hellox"
+os.remove(bridge .. "/request.txt")
+req.func(mk_key("BackSpace"), env)
+check("退格写的是删掉一个字母后的词", (read_request()) == "hello")
+
+-- 不会因为"前缀是个词"就停写：polar 是词，但 pola+lar 之后还得继续汇报
+ctx.input = "polar"
+state.set_meaning("polar", "a. 极地的")
+os.remove(bridge .. "/request.txt")
+req.func(mk_key("i"), env)
+check("前缀是已知词也照写（否则请求会停在半截词上）", (read_request()) == "polari")
+
+-- 太短的词不写（min_input_len 默认 2：敲第一个字母不打扰桥）
+env, ctx = mk_env(req, { input = "", composing = true })
+os.remove(bridge .. "/request.txt")
 req.func(mk_key("h"), env)
-check("打字不写 request.txt", read_request() == nil)
+check("太短的词不写 request.txt", read_request() == nil)
+
+-- 大写字母
+env, ctx = mk_env(req, { input = "hell" })
+os.remove(bridge .. "/request.txt")
+req.func(mk_key("Shift+O"), env)
+check("Shift+字母拼进请求", (read_request()) == "hellO")
 
 -- F24 触发重绘并被吞掉
 env, ctx = mk_env(req, { input = "hello" })
@@ -151,8 +186,19 @@ check("F24 触发候选重绘", ctx.refreshed == 1, "n=" .. tostring(ctx.refresh
 
 -- AI 关闭时不写请求
 env, ctx = mk_env(req, { input = "hello", ai = false })
+os.remove(bridge .. "/request.txt")
 req.func(mk_key("o"), env)
 check("AI 关闭不请求", read_request() == nil)
+
+-- en_ai/auto: 0 → 打字不写，只能按 Tab
+env, ctx = mk_env(req, { input = "hello", auto = false })
+os.remove(bridge .. "/request.txt")
+req.func(mk_key("o"), env)
+check("auto: 0 时打字不请求", read_request() == nil)
+local ra = req.func(mk_key("Tab"), env)
+local tw, td = read_request()
+check("auto: 0 时 Tab 仍然立刻查", ra == 1 and tw == "hello" and td == "0",
+      tostring(ra) .. " " .. tostring(tw) .. " " .. tostring(td))
 
 -- AI 档位跟着方案选单（单选组 ai_profile）走，不再有快捷键
 local function profile()

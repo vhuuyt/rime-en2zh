@@ -675,11 +675,24 @@ def watch_loop(cfg):
     seen = {}
     for path in snapshot(lua_dir, ".lua") + config_snapshot(user_dir):
         seen[path] = os.path.getmtime(path)
+    # 桥自己的代码改了是不会热生效的（它已经在内存里跑着），提醒一下免得白等
+    self_path = os.path.abspath(__file__)
+    self_mtime = os.path.getmtime(self_path) if os.path.isfile(self_path) else 0
+    warned_self = False
     settle = 3.0          # 改动停止 3 秒后才动手，避免边存边部署
     cooldown = 0.0        # 自己刚动过手，冷却期内忽略（防自激）
     log("监听 lua/*.lua 与 *.custom/schema/dict.yaml（改完自动部署/重载）")
     while True:
         time.sleep(1.0)
+        try:                      # 自己改了 → 只提醒，不自己重启（避免重启环）
+            mt = os.path.getmtime(self_path)
+            if self_mtime and mt != self_mtime and not warned_self:
+                self_mtime = mt
+                warned_self = True
+                log("⚠ ai_bridge.py 自己改动了：桥要重启才生效"
+                    "（python scripts/install_autostart.py --remove 后再装一次，或重启电脑）")
+        except OSError:
+            pass
         lua_changed = yaml_changed = False
         fresh = {}
         for path in snapshot(lua_dir, ".lua"):
@@ -821,6 +834,7 @@ def serve(cfg, fallback_delay):
 
     last_word = None
     last_seq = None
+    delay_used = 0
     pending_word = None
     due = 0.0
     done_word = None
@@ -876,12 +890,14 @@ def serve(cfg, fallback_delay):
             last_seq = req_seq
             pending_word = word if (word and len(word) >= min_len) else None
             wait = (delay_ms if delay_ms is not None else cfg.get("delay_ms", fallback_delay))
-            due = now + max(0, int(wait)) / 1000.0
+            delay_used = max(0, int(wait))
+            due = now + delay_used / 1000.0
 
         if pending_word and now >= due and pending_word != done_word:
             word_to_do = pending_word
             pending_word = None
             done_word = word_to_do
+            explicit = not delay_used          # delay 0 = 用户按 Tab 明确要查
             if word_to_do in saved:
                 log(f"{word_to_do} 已在 AI 词库，直接回放")
                 write_response(d, word_to_do, saved[word_to_do]["meaning"] or word_to_do)
@@ -897,11 +913,15 @@ def serve(cfg, fallback_delay):
                     cache[word_to_do] = entry
                     save_cache(d, cache)
                 write_response(d, word_to_do, display_text(entry))
-                inject_refresh()
                 log(f"{word_to_do} -> {display_text(entry)}")
-                if do_save and save_word(ai_path, word_to_do, entry):
-                    saved[word_to_do] = {"meaning": display_text(entry), "cap": entry.get("cap", False)}
+                # 自动查（停手 delay_ms）只进缓存：否则打字打到一半停手，
+                # 半截词也会被当成词条存进 AI 词库（typ / inf / di 这种）。
+                if do_save and (explicit or not cfg.get("save_only_explicit", True)) \
+                        and save_word(ai_path, word_to_do, entry):
+                    saved[word_to_do] = {"meaning": display_text(entry)}
                     log(f"已写入 AI 词库（共 {len(saved)} 词）：{ai_path}")
+                # 两个文件都落盘之后再触发重绘，否则重绘那一下读到的还是空
+                inject_refresh()
 
         time.sleep(POLL_SEC)
 

@@ -45,6 +45,8 @@ write(aidict, table.concat({
   "Typst\tTypst\t10",
   "n. 排版系统\tTypst\t0",
   "phrasal\tphrasal\t0",
+  "\1n. 极化激元\tpolariton\t0",
+  "polariton\tpolariton\t10",
   "", }, "\n"))
 
 -- ---- mock ----
@@ -177,7 +179,44 @@ M.func(mk_input({ mk_word("information") }), env)
 check("换词后偏移清零", state.offset_of("info") == 0,
       "off=" .. tostring(state.offset_of("info")))
 
+-- 7.4 AI 词库的词也参与前缀补全（不用并进主词库、也不用重新部署）
+env.engine.context.input = "polari"
+yielded = {}
+M.func(mk_input({}), env)
+local got = nil
+for _, c in ipairs(yielded) do
+  if c.text == "polariton" then got = c end
+end
+check("AI 词库的词能前缀补全", got ~= nil, "#" .. #yielded)
+check("补全出来的词带释义", got and got.comment == "n. 极化激元",
+      got and tostring(got.comment) or "nil")
+
+-- 大写输入 → 补全的候选也跟着首字母大写
+env.engine.context.input = "Polari"
+yielded = {}
+M.func(mk_input({}), env)
+local hit = nil
+for _, c in ipairs(yielded) do
+  if c.text == "Polariton" then hit = c end
+end
+check("大写输入时补全候选也大写", hit ~= nil and hit.comment == "n. 极化激元",
+      hit and tostring(hit.comment) or "nil")
+
+-- 关掉补全
+local saved_completion = env.ai_completion
+env.ai_completion = 0
+env.engine.context.input = "polari"
+yielded = {}
+M.func(mk_input({}), env)
+local any = false
+for _, c in ipairs(yielded) do
+  if c.text == "polariton" then any = true end
+end
+check("ai_completion: 0 时不再补全", not any)
+env.ai_completion = saved_completion
+
 -- 7.5 标点和片段候选原样放行，不会被当成释义吞掉
+env.engine.context.input = "info"
 yielded = {}
 M.func(mk_input({ mk_word("info"), mk_other(","), mk_other("#figure(image(\"\"))") }), env)
 check("标点/片段原样放行", #yielded == 3, "n=" .. #yielded)
@@ -191,6 +230,26 @@ yielded = {}
 M.func(mk_input({ mk_word("largemouth"), mk_meaning("bass") }), env)
 check("英文样子的释义不被当成候选词", #yielded == 1 and yielded[1].comment == "bass",
       "n=" .. #yielded .. " c=" .. tostring(yielded[1] and yielded[1].comment))
+
+-- 7.7 桥的译文是"后到"的：先渲染（还没有 response.txt），写好文件后重绘要能看到
+env.engine.context.input = "dijkstra"
+local resp = tmpdir .. "/response.txt"
+os.remove(resp)
+yielded = {}
+M.func(mk_input({}), env)                      -- 第一次：桥还没回，没释义
+check("译文没到时先给个空候选", yielded[1] and yielded[1].comment == "",
+      yielded[1] and tostring(yielded[1].comment) or "nil")
+local rf = io.open(resp, "w")
+rf:write("dijkstra\nn. 迪克斯特拉；最短路算法\n")
+rf:close()
+yielded = {}
+M.func(mk_input({}), env)                      -- 桥回来 + F24 重绘
+check("译文到了，重绘就能看到（comment 是滚动窗口，非空即可）",
+      yielded[1] and yielded[1].comment ~= nil and yielded[1].comment ~= "",
+      yielded[1] and tostring(yielded[1].comment) or "nil")
+check("完整译文记进 en_state（Ctrl+Enter 用）",
+      state.get_meaning("dijkstra") == "n. 迪克斯特拉；最短路算法",
+      tostring(state.get_meaning("dijkstra")))
 
 -- 8. AI 词库改了之后能读到新释义
 write(aidict, table.concat({

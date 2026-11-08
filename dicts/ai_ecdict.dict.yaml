@@ -1,6 +1,6 @@
 # Rime dictionary
 # encoding: utf-8
-#v1794126160
+#v1794135822
 #
 # AI 补录词库（英文模式）—— 由 ai_bridge.py 自动追加，也可手工删改
 # 格式：文本 <TAB> 编码 <TAB> 权重
@@ -30,6 +30,8 @@ da	da	10
 n. 爸爸（口语）	da	0
 debian	debian	10
 n. Linux发行版	debian	0
+dijkstra	dijkstra	10
+n. 迪克斯特拉；最短路算法	dijkstra	0
 figma	figma	10
 n. Figma，在线界面设计与协作软件	figma	0
 infor	infor	10
@@ -58,12 +60,18 @@ olea	olea	10
 n. 木犀榄属	olea	0
 pilog	pilog	10
 n. 皮洛格	pilog	0
+polariton	polariton	10
+n. 极化激元	polariton	0
+powerpoint	powerpoint	10
+n. 微软演示文稿软件；演示文稿	powerpoint	0
 sa	sa	10
 n. 圣人；灵师	sa	0
 sakura	sakura	10
 n. 樱花；樱桃树	sakura	0
 sdu	sdu	10
 n. 山东大学；开发单元	sdu	0
+skyrmion	skyrmion	10
+n. 磁性拓扑准粒子；糖果	skyrmion	0
 ty	ty	10
 int. 谢谢	ty	0
 typst	typst	10

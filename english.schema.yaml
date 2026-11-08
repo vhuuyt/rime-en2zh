@@ -104,7 +104,9 @@ typst_dict:
 # ---- 大模型翻译（由 lua/en_ai_request.lua + scripts/ai_bridge.py 使用）----
 en_ai:
   dir: ""              # 空 = 系统临时目录/rime_en_ai；桥接脚本与这里必须一致
-  # 没有「停顿多久自动查」这回事了：AI 只在按 Tab 且本地查不到释义时请求一次
+  auto: 1              # 1 = 打字停下来 delay_ms 后自动查（本地无释义的词）；0 = 只能按 Tab 查
+  delay_ms: 900        # 停手多久才发请求；想更快出就用 300~500，想更省就用 1500
+  ai_completion: 5     # AI 词库里的词也参与前缀补全（打 polari 出 polariton）；0 = 关
   # >>> ai_names auto
   profiles: "minimax,openai,deepseek"
   # <<< ai_names auto
