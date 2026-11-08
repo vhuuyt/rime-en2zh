@@ -187,8 +187,19 @@ Rime 的 Lua 组件不能联网、不能起定时器、也不能可靠重启输�
 ## 自测
 
 ```bash
-bash tests/run.sh                    # 8 个 Lua 组件的行为测试
+bash tests/run.sh                    # 7 个 Lua 组件的行为测试（假候选流 / 假请求文件）
 python scripts/ai_bridge.py --selftest
+python scripts/probe.py --check      # 端到端：真按键 → 真候选 → 真上屏
 ```
 
-测试用一个假的候选流喂给 filter、用假的请求文件喂给桥，都不需要输入法在跑。
+前两个不需要输入法在跑；`probe.py` 反过来，它加载 librime 自己开一个会话（Windows 用
+Weasel 的 `rime.dll`，其他平台 `RIME_LIB=...`），所以能验证"词库 → 候选 → 上屏"整条链路：
+
+```bash
+python scripts/probe.py Hello            # 候选 + 释义
+python scripts/probe.py --pages 0 typ    # 翻到底看全部候选
+python scripts/probe.py --commit Hello   # 上屏文本
+python scripts/probe.py --check          # 10 条冒烟断言，改完东西跑这个
+```
+
+改词库/lua 之后的推荐顺序：`bash tests/run.sh` → 桥自检 → `probe.py --check`。

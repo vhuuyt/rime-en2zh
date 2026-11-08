@@ -253,12 +253,23 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 ## 七、测试
 
 ```bash
-bash tests/run.sh                # 全部（Windows 可在 WSL / Git Bash 里跑）
+bash tests/run.sh                # 组件级：7 个 Lua 测试（Windows 可在 WSL / Git Bash 里跑）
 bash tests/run.sh en_assoc       # 只跑一个
-python scripts/ai_bridge.py --selftest
+python scripts/ai_bridge.py --selftest   # 桥：API 协议 / 词库读写
+python scripts/probe.py --check          # 端到端：真的敲键，看候选和上屏
 ```
 
 `tests/*.lua` 会自己找上一级的 `lua/`，放哪儿都能跑；只依赖标准 Lua（用到 `utf8`）。
+
+`scripts/probe.py` 用 librime 自己的 C API 模拟按键（不弹窗、不抢焦点、只读），所以能验证
+"词库 → 候选 → 上屏"这条真链路，而不只是组件行为：
+
+```bash
+python scripts/probe.py Hello LaTeX        # 打这些词，列出候选和释义
+python scripts/probe.py --pages 0 typ      # 翻到底（默认只第一页，每页 9 条）
+python scripts/probe.py --commit Hello     # 看上屏文本（自动补一个空格）
+python scripts/probe.py --check            # 改完词库/lua 跑这个，10 条断言
+```
 
 ---
 
