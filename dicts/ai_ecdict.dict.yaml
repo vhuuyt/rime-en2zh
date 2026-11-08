@@ -11,96 +11,96 @@ sort: by_weight
 use_preset_vocabulary: false
 ...
 Ai	Ai	10
-n. 人工智能	Ai	0
+n. 人工智能	Ai	0
 Debian	Debian	10
-n. Linux发行版	Debian	0
+n. Linux发行版	Debian	0
 Figma	Figma	10
-n. Figma，在线界面设计与协作软件	Figma	0
+n. Figma，在线界面设计与协作软件	Figma	0
 Infor	Infor	10
-n. 企业软件公司	Infor	0
+n. 企业软件公司	Infor	0
 LaTeX	LaTeX	10
-n. 排版系统；排版语言	LaTeX	0
+n. 排版系统；排版语言	LaTeX	0
 Li	Li	10
-n. 李；锂	Li	0
+n. 李；锂	Li	0
 Ni	Ni	10
-n. 镍（化学元素符号）	Ni	0
+n. 镍（化学元素符号）	Ni	0
 Ol	Ol	10
-int. 哦；噢	Ol	0
+int. 哦；噢	Ol	0
 Olea	Olea	10
-n. 木犀榄属	Olea	0
+n. 木犀榄属	Olea	0
 Pilog	Pilog	10
-n. 皮洛格	Pilog	0
+n. 皮洛格	Pilog	0
 Sdu	Sdu	10
-n. 山东大学；开发单元	Sdu	0
+n. 山东大学；开发单元	Sdu	0
 Typst	Typst	10
-n. 一种基于 Rust 的现代排版系统…	Typst	0
+n. 一种基于 Rust 的现代排版系统…	Typst	0
 Xr	Xr	10
-n. 扩展现实	Xr	0
+n. 扩展现实	Xr	0
 Xrd	Xrd	10
-n. X射线衍射	Xrd	0
+n. X射线衍射	Xrd	0
 abbr	abbr	10
-n./v. 缩写；缩略词	abbr	0
+n./v. 缩写；缩略词	abbr	0
 abbre	abbre	10
-n. 缩写	abbre	0
+n. 缩写	abbre	0
 ai	ai	10
-n. 人工智能	ai	0
+n. 人工智能	ai	0
 astro	astro	10
-n. 宇航员（口语）	astro	0
+n. 宇航员（口语）	astro	0
 bx	bx	10
-n. 盒子；箱	bx	0
+n. 盒子；箱	bx	0
 ch	ch	10
-n. 章节（chapter的缩写）	ch	0
+n. 章节（chapter的缩写）	ch	0
 cha	cha	10
-n. 茶	cha	0
+n. 茶	cha	0
 china	china	10
-n. 中国；瓷器	china	0
+n. 中国；瓷器	china	0
 da	da	10
-n. 爸爸（口语）	da	0
+n. 爸爸（口语）	da	0
 debian	debian	10
-n. Linux发行版	debian	0
+n. Linux发行版	debian	0
 figma	figma	10
-n. Figma，在线界面设计与协作软件	figma	0
+n. Figma，在线界面设计与协作软件	figma	0
 infor	infor	10
-n. 企业软件公司	infor	0
+n. 企业软件公司	infor	0
 jq	jq	10
-n. JSON处理工具	jq	0
+n. JSON处理工具	jq	0
 jwuh	jwuh	10
-{"zh":"","pos":""	jwuh	0
+{"zh":"","pos":""	jwuh	0
 ki	ki	10
-n./int. 日本哲学中的生命能量	ki	0
+n./int. 日本哲学中的生命能量	ki	0
 la	la	10
-int. 哦；瞧吧	la	0
+int. 哦；瞧吧	la	0
 li	li	10
-n. 李；锂	li	0
+n. 李；锂	li	0
 limps	limps	10
-v./n. 跛行；跛足	limps	0
+v./n. 跛行；跛足	limps	0
 ll	ll	10
-v. 将要	ll	0
+v. 将要	ll	0
 ni	ni	10
-n. 镍（化学元素符号）	ni	0
+n. 镍（化学元素符号）	ni	0
 pilog	pilog	10
-n. 皮洛格	pilog	0
+n. 皮洛格	pilog	0
 sa	sa	10
-n. 圣人；灵师	sa	0
+n. 圣人；灵师	sa	0
 sakura	sakura	10
-n. 樱花；樱桃树	sakura	0
+n. 樱花；樱桃树	sakura	0
 sdu	sdu	10
-n. 山东大学；开发单元	sdu	0
+n. 山东大学；开发单元	sdu	0
 ty	ty	10
-int. 谢谢	ty	0
+int. 谢谢	ty	0
 typst	typst	10
-n. 一种基于 Rust 的现代排版系统…	typst	0
+n. 一种基于 Rust 的现代排版系统…	typst	0
 veyh	veyh	10
-{"zh":"","pos":""	veyh	0
+{"zh":"","pos":""	veyh	0
 vite	vite	10
-n. 黄荆；牡荆属植物	vite	0
+n. 黄荆；牡荆属植物	vite	0
 xc	xc	10
-n. 越野滑雪	xc	0
+n. 越野滑雪	xc	0
 xq	xq	10
-n. 小学全科	xq	0
+n. 小学全科	xq	0
 xr	xr	10
-n. 扩展现实	xr	0
+n. 扩展现实	xr	0
 xrd	xrd	10
-n. X射线衍射	xrd	0
+n. X射线衍射	xrd	0
 yk	yk	10
-含义不明的缩写	yk	0
+含义不明的缩写	yk	0

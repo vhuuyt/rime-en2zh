@@ -24,7 +24,7 @@ local M = {}
 local state = require("en_state")
 
 local WORD_RE = "^[%a][%a'%-]*$"
-local WORD_QUALITY = 1000        -- 词库单词行的质量下限（权重 10 → ≈22026）
+local MARK = "\1"               -- 释义行标记（词库生成时写在文本前）
 
 local function default_dir()
   local tmp = os.getenv("TEMP") or os.getenv("TMPDIR") or os.getenv("TMP") or "/tmp"
@@ -86,6 +86,7 @@ local function load_ai_dict(path)
   for line in f:lines() do
     if line:sub(1, 1) ~= "#" and line:find("\t", 1, true) then
       local c1, c2 = line:match("^([^\t]*)\t([^\t]*)")
+      if c1 and c1:sub(1, 1) == MARK then c1 = c1:sub(2) end
       if c1 and c2 and c1 ~= "" and c2 ~= "" and c1 ~= c2 then
         local slot = words[c2]
         if not slot then slot = {}; words[c2] = slot end
@@ -161,11 +162,9 @@ function M.init(env)
   env.resp_text = nil
 end
 
--- 单词候选还是释义候选？
-local function is_word(cand)
-  local text = cand.text or ""
-  if cand.quality and cand.quality > WORD_QUALITY then return true end
-  return text:match(WORD_RE) ~= nil
+local function strip_mark(text)
+  if text:sub(1, 1) == MARK then return text:sub(2) end
+  return text
 end
 
 function M.func(input, env)
@@ -190,21 +189,29 @@ function M.func(input, env)
 
   for cand in input:iter() do
     local text = cand.text or ""
-    if is_word(cand) then
+    if text:sub(1, 1) == MARK then
+      -- 释义行：配给上一个还没释义的单词，自己消失
+      local meaning = strip_mark(text)
+      if pending then
+        apply_comment(pending, meaning)
+        yield(pending)
+        pending = nil
+      else
+        dropped = dropped or meaning     -- 孤立的释义（没有对应的单词行）
+      end
+    elseif text:match(WORD_RE) then
       if text == input_text then seen_exact = true end
       if pending then
         yield(pending)          -- 上一个词没有释义（只有原词行）
       end
       pending = cand
     else
-      -- 这是释义候选：配给上一个单词
+      -- 标点 / Typst 片段等：原样放行，不参与释义配对
       if pending then
-        apply_comment(pending, text)
         yield(pending)
         pending = nil
-      else
-        dropped = dropped or text
       end
+      yield(cand)
     end
   end
   if pending then

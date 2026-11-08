@@ -38,24 +38,30 @@ local function write(path, body)
   f:close()
 end
 
--- AI 词库（filter 只读这一份，很小）
+-- AI 词库（filter 只读这一份，很小）。第二组故意写成旧格式（没有 \x01 标记）验证兼容。
 write(aidict, table.concat({
   "typst\ttypst\t10",
-  "n. 排版系统\ttypst\t0",
+  "\1n. 排版系统\ttypst\t0",
   "Typst\tTypst\t10",
   "n. 排版系统\tTypst\t0",
   "phrasal\tphrasal\t0",
   "", }, "\n"))
 
 -- ---- mock ----
--- 质量是识别"单词候选/释义候选"的关键：
--- 词库单词行权重 10 → 质量≈22026；释义行权重 0 → 质量≈1
+-- 词库的释义行文本前带 \x01（见 scripts/ecdict2dict.py）：filter 靠标记分类，不看权重
+local MARK = "\1"
+
 local function mk_word(text, comment)
   return { text = text, comment = comment, quality = 22026 }
 end
 
 local function mk_meaning(text)
-  return { text = text, comment = nil, quality = 1 }
+  return { text = MARK .. text, comment = nil, quality = 1 }
+end
+
+-- 标点 / Typst 片段这类"别人的候选"，文本不带标记也不是纯单词
+local function mk_other(text)
+  return { text = text, comment = nil, quality = 0 }
 end
 
 local function mk_input(cands)
@@ -166,6 +172,21 @@ yielded = {}
 M.func(mk_input({ mk_word("information") }), env)
 check("换词后偏移清零", state.offset_of("info") == 0,
       "off=" .. tostring(state.offset_of("info")))
+
+-- 7.5 标点和片段候选原样放行，不会被当成释义吞掉
+yielded = {}
+M.func(mk_input({ mk_word("info"), mk_other(","), mk_other("#figure(image(\"\"))") }), env)
+check("标点/片段原样放行", #yielded == 3, "n=" .. #yielded)
+check("词候选的注释没被标点污染", yielded[1] and yielded[1].comment ~= ", ",
+      yielded[1] and tostring(yielded[1].comment) or "nil")
+check("标点自己还在", yielded[2] and yielded[2].text == ",")
+
+-- 7.6 释义文本本身是英文单词（bass / Tretinoin 这种）也照旧当释义
+env.engine.context.input = "largemouth"
+yielded = {}
+M.func(mk_input({ mk_word("largemouth"), mk_meaning("bass") }), env)
+check("英文样子的释义不被当成候选词", #yielded == 1 and yielded[1].comment == "bass",
+      "n=" .. #yielded .. " c=" .. tostring(yielded[1] and yielded[1].comment))
 
 -- 8. AI 词库改了之后能读到新释义
 write(aidict, table.concat({

@@ -476,6 +476,9 @@ use_preset_vocabulary: false
 """
 
 
+MEANING_MARK = "\x01"       # 与 scripts/ecdict2dict.py 一致：释义行的隐形标记
+
+
 def read_ai_dict(path):
     """{word: {"meaning": 显示文本, "cap": bool}}，直接解析 dict.yaml（可手工改）。"""
     words = {}
@@ -488,6 +491,8 @@ def read_ai_dict(path):
                 if len(cols) < 3:
                     continue
                 text, code = cols[0], cols[1]
+                if text.startswith(MEANING_MARK):     # 释义行（新格式）→ 剥掉标记
+                    text = text[len(MEANING_MARK):]
                 e = words.setdefault(code, {"meaning": "", "cap": False})
                 if text == code:
                     continue
@@ -508,13 +513,13 @@ def write_ai_dict(path, words):
         meaning = (e.get("meaning") or "").strip()
         lines.append("%s\t%s\t10" % (w, w))
         if meaning and meaning != w:
-            lines.append("%s\t%s\t0" % (meaning, w))
+            lines.append("%s%s\t%s\t0" % (MEANING_MARK, meaning, w))
         if e.get("cap"):
             cap = w[:1].upper() + w[1:]
             if cap != w:
                 lines.append("%s\t%s\t10" % (cap, cap))
                 if meaning:
-                    lines.append("%s\t%s\t0" % (meaning, cap))
+                    lines.append("%s%s\t%s\t0" % (MEANING_MARK, meaning, cap))
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         f.write(DICT_HEADER % int(time.time()))

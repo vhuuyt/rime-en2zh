@@ -46,7 +46,11 @@ corrosion corrode oxidization anodize galvanize passivation
 NOISE_PREFIX = ("[网络]", "[网络俚语]", "【网络】")
 MAX_MEANING_LEN = 34
 SHORT_MEANING_LEN = 22      # 联想模式贴在候选尾部的释义上限（超出部分由跑马灯滚动）
-FULL_LINES = 2              # 每个词额外保留几条较长释义
+FULL_LINES = 0              # 额外长释义的行数：0 = 每词只留一条（filter 只显示第一条，多写的会白占体积）
+
+# 释义行的隐形标记：filter 靠它区分「单词行」和「释义行」，不用再猜权重或像不像英文单词。
+# 正文在候选里显示前会被 lua 剥掉，所以你看不到它。
+MEANING_MARK = "\x01"
 
 
 def parse_rank(row):
@@ -209,6 +213,70 @@ def post_process_case(paths):
               file=sys.stderr)
 
 
+def compact(paths, prune_weak_variants=True):
+    """整理已生成的词库（不需要 csv，幂等）：
+
+      1. 每个编码只留**第一条**释义行（filter 只显示第一条，剩下的纯占体积）
+      2. 释义行加 MEANING_MARK，filter 就不用猜"这行是词还是释义"
+      3. 剪掉「变形的大写变体」（Titrated 这种，权重 5）：句子开头不会用它
+    """
+    for path in paths:
+        with open(path, encoding="utf-8") as f:
+            raw = f.read().splitlines()
+        try:
+            end = next(i for i, line in enumerate(raw) if line.strip() == "...")
+        except StopIteration:
+            print(f"{path}: 找不到 yaml 结束标记，跳过", file=sys.stderr)
+            continue
+
+        groups = {}                      # code -> [(text, weight)]，保持文件顺序
+        for line in raw[end + 1:]:
+            if not line.strip() or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            weight = int(parts[2]) if len(parts) > 2 and parts[2].strip().isdigit() else 0
+            groups.setdefault(parts[1], []).append((parts[0], weight))
+
+        out, dropped_meaning, dropped_cap = [], 0, 0
+        for code, items in groups.items():
+            words = [(t, w) for t, w in items if w > 0 or t == code]
+            meanings = [(t, w) for t, w in items if w <= 0 and t != code]
+            if not meanings and not words:
+                continue
+            # 变形的大写变体（Titrated 这种，权重 5）：句子开头不会用到，剪掉省体积
+            if prune_weak_variants and words and code[:1].isupper() and max(w for _, w in words) < 10:
+                dropped_cap += len(words) + len(meanings)
+                continue
+            seen_word = set()
+            for text, weight in words:
+                if text in seen_word:
+                    continue
+                seen_word.add(text)
+                out.append((text, code, weight))
+            if meanings:
+                text = meanings[0][0]
+                if not text.startswith(MEANING_MARK):
+                    text = MEANING_MARK + text
+                out.append((text, code, meanings[0][1]))
+                dropped_meaning += len(meanings) - 1
+            elif words:
+                dropped_meaning += 0
+
+        new_body = ["\t".join([t, c, str(w)]) for t, c, w in out]
+        old_body = [l for l in raw[end + 1:] if l.strip() and not l.startswith("#")]
+        if new_body == old_body:
+            print(f"{path}: 已经是紧凑格式，未改动", file=sys.stderr)
+            continue
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(raw[:end + 1]) + "\n")
+            f.write("\n".join(new_body) + "\n")
+        print(f"{path}: {len(old_body)} -> {len(new_body)} 行"
+              f"（删多余释义 {dropped_meaning} 行，剪掉弱变体 {dropped_cap} 行）",
+              file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", help="ECDICT 的 ecdict.csv（--case-variants 模式下不需要）")
@@ -217,6 +285,8 @@ def main():
                     help="只给已有的词库补首字母大写变体（不需要 csv），可给多个文件")
     ap.add_argument("--no-case-variants", action="store_true",
                     help="生成时不加大小写变体（词库体积约减半）")
+    ap.add_argument("--compact", nargs="+", metavar="DICT",
+                    help="整理已有词库：每码只留一条释义 + 加释义标记 + 剪掉弱变体（不需要 csv，幂等）")
     ap.add_argument("--limit", type=int, default=40000, help="基库收录多少个词（默认 40000）")
     ap.add_argument("--chem-out", help="另外生成化学词库（如 chem_ecdict.dict.yaml）")
     ap.add_argument("--chem-only-tag", default="[化]", help="化学词条的标记")
@@ -227,6 +297,9 @@ def main():
 
     if args.case_variants:
         post_process_case(args.case_variants)
+        return
+    if args.compact:
+        compact(args.compact)
         return
     if not args.csv or not args.out:
         ap.error("生成词库需要 --csv 和 --out（或用 --case-variants 给已有词库补变体）")
@@ -325,7 +398,7 @@ def main():
             for m in meanings:
                 if m == word:
                     continue
-                out.write(f"{m}\t{word}\t0\n")
+                out.write(f"{MEANING_MARK}{m}\t{word}\t0\n")
         written = set(lines)
         for form in sorted(inflections):
             base = inflections[form]
@@ -333,7 +406,7 @@ def main():
                 continue
             hint = "%s（%s 的变形）" % (lines[base][0], base)
             out.write(f"{form}\t{form}\t5\n")
-            out.write(f"{hint}\t{form}\t0\n")
+            out.write(f"{MEANING_MARK}{hint}\t{form}\t0\n")
 
     if args.chem_out:
         with open(args.chem_out, "w", encoding="utf-8", newline="\n") as out:
@@ -350,19 +423,21 @@ def main():
                 out.write(f"{word}\t{word}\t10\n")
                 for m in chem_words[word]:
                     if m and m != word:
-                        out.write(f"{m}\t{word}\t0\n")
+                        out.write(f"{MEANING_MARK}{m}\t{word}\t0\n")
             for form in sorted(inflections):
                 base = inflections[form]
                 if form in chem_words or base not in chem_words or form in lines:
                     continue
                 hint = "%s（%s 的变形）" % (chem_words[base][0], base)
                 out.write(f"{form}\t{form}\t5\n")
-                out.write(f"{hint}\t{form}\t0\n")
+                out.write(f"{MEANING_MARK}{hint}\t{form}\t0\n")
         print(f"chem words={len(chem_words)} -> {args.chem_out}", file=sys.stderr)
 
-    # 大小写变体：直接复用后处理（同一份实现，重复跑幂等）
+    # 大小写变体 + 紧凑化：直接复用后处理（同一份实现，重复跑幂等）
+    outs = [args.out] + ([args.chem_out] if args.chem_out else [])
     if not args.no_case_variants:
-        post_process_case([args.out] + ([args.chem_out] if args.chem_out else []))
+        post_process_case(outs)
+    compact(outs)
 
     total = 1 + sum(1 for w, ms in lines.items() for m in ms if m != w)
     lens = [len(ms[0]) for ms in lines.values() if ms]

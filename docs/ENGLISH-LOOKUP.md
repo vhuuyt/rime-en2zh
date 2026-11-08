@@ -22,8 +22,8 @@
 
 ```
 按键 ─→ speller/table_translator 从码表取：
-        info   info   10      ← 单词行（权重 10 → quality≈22026）
-        n. 信息；资料  info   0       ← 释义行（权重 0 → quality≈1）
+        info            info   10   ← 单词行（权重 10）
+        \x01n. 信息；资料  info   0    ← 释义行（权重 0，文本前有隐形标记）
                               ↓
         filter: en_assoc 认出「单词行 + 紧跟的释义行」：
           释义 → 单词候选的 comment（超宽则按 width 截窗口滚动）
@@ -36,6 +36,9 @@
         Ctrl+Enter → en_ai_request 从 en_state 取完整释义上屏
         Tab       → 见下
 ```
+
+判定规则只看标记：文本以 `\x01` 开头 = 释义行；文本是纯单词 = 单词候选；
+其余（标点、Typst 片段）原样放行 —— 所以标点紧跟词候选时也不会被当成释义。
 
 **这里没有任何查表动作**：`en_assoc` 靠的是"释义行就排在单词行后面"这个布局，权重（quality）只是用来区分两者的辅助线索。所以输入路径上不需要把 7 万词的词表读进 Lua —— 这正是英文模式首次按键不掉帧的原因。
 
@@ -119,7 +122,8 @@ interj. 喂；嘿    Hello    0
 ```
 
 `python scripts/ecdict2dict.py --case-variants dicts/*.dict.yaml` 可以给现成词库补变体（幂等）；
-生成时加 `--no-case-variants` 就不要变体。代价是词库和 build 产物约翻倍（deploy 多 2 秒），
+生成时加 `--no-case-variants` 就不要变体；`--compact` 会顺手剪掉"变形的大写变体"（`Titrated`
+这种权重 5 的，句子开头用不到）。代价是词库和 build 产物约翻倍（deploy 多 2 秒），
 运行时零成本 —— 查表是按编码精确取，`kInitialSearchLimit = 10` 也限制了补全最多展开 10 条。
 
 ---

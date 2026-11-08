@@ -150,8 +150,8 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 
 | 文件 | 内容 | 能删吗 | 何时重建 |
 |---|---|---|---|
-| `dicts/ecdict.dict.yaml` | 4 万高频词 + 3 万变形（`ran`/`bigger`/`titrated`）+ 8.4 万个大小写变体 | 不能 | 想换规模/释义时重新生成 |
-| `dicts/chem_ecdict.dict.yaml` | 1.5 万 `[化]` 词条 + 1.7 万个大小写变体 | 不能 | 同上（一条命令一起生成） |
+| `dicts/ecdict.dict.yaml` | 14.5 万编码 / 22.8 万行（4 万词 + 3 万变形 + 4.4 万大小写变体），8.3MB | 不能 | 想换规模/释义时重新生成 |
+| `dicts/chem_ecdict.dict.yaml` | 3 万编码 / 5.9 万行，1.9MB | 不能 | 同上（一条命令一起生成） |
 | `dicts/ai_ecdict.dict.yaml` | AI 查过的词 | **能**（`Ctrl+Delete`） | 桥自动写入（带 `#v` 版本号） |
 | `dicts/sogouw` 等 | **中文词库**（双拼用）：搜狗、THUOCL、语料、符号、多音字 | 不能 | 换词库时替换文件 |
 
@@ -171,12 +171,21 @@ python scripts\ecdict2dict.py --case-variants dicts\ecdict.dict.yaml dicts\chem_
 
 不想让词库变大（约减半）：生成时加 `--no-case-variants`。
 
-**词库格式**（一个编码下按权重降序，单词行权重 10、释义行权重 0）：
+整理词库（每编码只留一条释义 + 加标记 + 剪掉"变形的大写变体"，幂等）：
+
+```powershell
+python scripts\ecdict2dict.py --compact dicts\ecdict.dict.yaml dicts\chem_ecdict.dict.yaml
+```
+
+**词库格式**（一个编码下按权重降序；释义行的文本前有一个隐形标记 `\x01`，filter 靠它认行）：
 
 ```yaml
-info	info	10              # <- 单词候选
-n. 信息；资料	info	0       # <- 释义：filter 会把它搬到上面那条的右边，自己消失
+info            info    10    # <- 单词候选（权重 10）
+\x01n. 信息；资料  info    0     # <- 释义行：搬成上面那条的 comment，自己消失
 ```
+
+标记在显示前会被剥掉，你看不见；它的作用是让 filter **不用猜**"这行是词还是释义"
+（否则释义本身是英文单词时就认错了）。
 
 ---
 
@@ -267,6 +276,6 @@ python scripts/ai_bridge.py --selftest
 
 **为什么 AI 要按 Tab 才触发**：早期是"停手 900ms 自动查"，那要求每次按键都写一次请求文件（同步 I/O，~0.3ms/键，还会被磁盘/杀毒拖慢）。现在打字完全不碰磁盘，只有 Tab 这一下写一次。
 
-**大小写**：Rime 的码表查询精确匹配（`prism->GetValue`），所以 `ecdict2dict.py` 在生成时给每个小写词复制一份「首字母大写」变体（短词再加一份全大写，如 `API`/`PDF`）。打 `Hello` 和 `hello` 都有本地释义。代价只在体积（词库 7M → 15M、部署多 2 秒），运行时零成本：查表是按编码精确取，候选多少条不影响按键。
+**大小写**：Rime 的码表查询精确匹配（`prism->GetValue`），所以 `ecdict2dict.py` 在生成时给每个小写词复制一份「首字母大写」变体（短词再加一份全大写，如 `API`/`PDF`）。打 `Hello` 和 `hello` 都有本地释义。代价只在体积（词库 6M → 10M），运行时零成本：查表是按编码精确取，候选多少条不影响按键。
 
 **更多细节**：`docs/ENGLISH-LOOKUP.md`（数据流、键位、AI 链路、排错）、`docs/MULTI-DEVICE.md`（配置走 git，`*.userdb` 走 Rime 同步，`build/` 和 `ai_config.json` 不进仓库）。
