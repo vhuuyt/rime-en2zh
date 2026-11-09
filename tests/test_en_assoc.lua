@@ -183,13 +183,23 @@ check("换词后偏移清零", state.offset_of("info") == 0,
 env.engine.context.input = "polari"
 yielded = {}
 M.func(mk_input({}), env)
-local got = nil
-for _, c in ipairs(yielded) do
-  if c.text == "polariton" then got = c end
-end
-check("AI 词库的词能前缀补全", got ~= nil, "#" .. #yielded)
-check("补全出来的词带释义", got and got.comment == "n. 极化激元",
-      got and tostring(got.comment) or "nil")
+check("没有词库候选时，AI 补全排第一", yielded[1] and yielded[1].text == "polariton",
+      yielded[1] and yielded[1].text or "nil")
+check("补全出来的词带释义", yielded[1] and yielded[1].comment == "n. 极化激元",
+      yielded[1] and tostring(yielded[1].comment) or "nil")
+local last = yielded[#yielded]
+check("原样输入那条还在，但排最后", last and last.text == "polari"
+      and (yielded[1].quality or 0) > (last.quality or 0),
+      last and (last.text .. " q=" .. tostring(last.quality)) or "nil")
+
+-- 完整输入 AI 词：只给一条（不再多一条同名的原样兜底）
+env.engine.context.input = "polariton"
+yielded = {}
+M.func(mk_input({}), env)
+check("完整输入时只出一条", #yielded == 1, "n=" .. #yielded)
+check("那条就是它自己且带释义",
+      yielded[1] and yielded[1].text == "polariton" and yielded[1].comment == "n. 极化激元",
+      yielded[1] and (yielded[1].text .. "/" .. tostring(yielded[1].comment)) or "nil")
 
 -- 大写输入 → 补全的候选也跟着首字母大写
 env.engine.context.input = "Polari"
@@ -214,6 +224,20 @@ for _, c in ipairs(yielded) do
 end
 check("ai_completion: 0 时不再补全", not any)
 env.ai_completion = saved_completion
+
+-- 7.45 词库有候选时：词库的顺序不动，AI 接在后面，原样兜底最后
+env.engine.context.input = "polari"
+yielded = {}
+M.func(mk_input({ mk_word("polarity"), mk_other("#emph[]") }), env)
+check("词库候选在前（顺序不变）", yielded[1] and yielded[1].text == "polarity",
+      yielded[1] and yielded[1].text or "nil")
+local ai_pos
+for i, c in ipairs(yielded) do
+  if c.text == "polariton" then ai_pos = i end
+end
+check("AI 词接在词库候选后面", ai_pos == 3, "pos=" .. tostring(ai_pos))
+check("原样兜底仍在最后", yielded[#yielded] and yielded[#yielded].text == "polari",
+      yielded[#yielded] and yielded[#yielded].text or "nil")
 
 -- 7.5 标点和片段候选原样放行，不会被当成释义吞掉
 env.engine.context.input = "info"

@@ -20,14 +20,12 @@ local M = {}
 local builtin_entries = {
   { "emph",   "#emph[]",                         "强调" },
   { "emph-line", "#emph-line[]",                 "划线强调" },
-  { "figure", '#figure(image(""), width:100% caption: [])', "图片+题注" },
-  { "image",  'image("")',                       "图片" },
+  { "emph-block", "#emph-block[]",                 "块强调" },
+  { "cols", "#cols(2,rule:auto,ratio:(1fr,1fr))[  ]", "多栏" },
+  { "figure", '#figure(image(""), width:100%, caption: [])', "图片+题注" },
   { "table",  '#table(columns: (auto, auto), [A], [B])', "表格" },
   { "link",   '#link("")[]',                     "链接" },
   { "block",  "#block[]",                        "块" },
-  { "code",   "`code`",                          "行内代码" },
-  { "super",  "#super[]",                        "上标" },
-  { "sub",    "#sub[]",                          "下标" },
 }
 
 function M.init(env)

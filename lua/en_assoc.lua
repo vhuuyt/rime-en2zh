@@ -24,6 +24,14 @@ local M = {}
 local state = require("en_state")
 
 local WORD_RE = "^[%a][%a'%-]*$"
+
+-- 候选质量分档（越大越靠前）。参考：词库单词行权重 10 → 质量≈22026，变形行 5 → ≈148。
+-- AI 的词排在词库词之后、但必须排在"原样输入"那条之前 —— 否则打 dijk 时
+-- 第一位永远是 dijk 本身，跟查本地词库（补全在前）的手感不一致。
+local Q_AI_EXACT = 2000      -- AI 词库里精确命中（带释义）
+local Q_AI_COMPLETE = 30000   -- AI 词库的前缀补全：比词库主词（≈22026）还高一点 ——
+                              -- 你按 Tab 存下来的词，下次打前缀就该最先看到
+local Q_RAW = 0.05            -- 原样输入兜底（本地/ AI 都没有这个词时，保证能上屏）
 local MARK = "\1"               -- 释义行标记（词库生成时写在文本前）
 
 local function default_dir()
@@ -170,6 +178,12 @@ function M.func(input, env)
   state.clear_meanings()
 
   local offset = state.offset_of(input_text)
+  -- 候选先收集再输出：filter 的输出顺序就是最终顺序（质量只在同一个 translator
+  -- 内部参与排序），所以想让自己插进去的候选（AI 词）按质量站好位，就得自己排。
+  local out = {}               -- 词库/其他组件给的候选（保持它们的原顺序）
+  local ai_exact = {}          -- AI 词库精确命中（要插在本地精确词之后）
+  local ai_more = {}           -- AI 词库前缀补全（接在本地候选后面）
+  local raw_cand = nil         -- 原样输入兜底（永远最后）
   local pending = nil          -- 待配释义的单词候选
   local seen_exact = false
   local dropped = nil          -- 孤立的释义（没有对应的单词行）
@@ -191,7 +205,7 @@ function M.func(input, env)
       local meaning = strip_mark(text)
       if pending then
         apply_comment(pending, meaning)
-        yield(pending)
+        out[#out + 1] = pending
         pending = nil
       else
         dropped = dropped or meaning     -- 孤立的释义（没有对应的单词行）
@@ -199,20 +213,20 @@ function M.func(input, env)
     elseif text:match(WORD_RE) then
       if text == input_text then seen_exact = true end
       if pending then
-        yield(pending)          -- 上一个词没有释义（只有原词行）
+        out[#out + 1] = pending   -- 上一个词没有释义（只有原词行）
       end
       pending = cand
     else
       -- 标点 / Typst 片段等：原样放行，不参与释义配对
       if pending then
-        yield(pending)
+        out[#out + 1] = pending
         pending = nil
       end
-      yield(cand)
+      out[#out + 1] = cand
     end
   end
   if pending then
-    yield(pending)
+    out[#out + 1] = pending
   end
 
   -- AI 词库（桥自动补录的那些词）在这里"当候选用"：
@@ -235,19 +249,21 @@ function M.func(input, env)
       local cand = Candidate("en_ai", start, stop, text, "")
       cand.quality = quality
       apply_comment(cand, meaning)
-      yield(cand)
+      ai_more[#ai_more + 1] = cand
     end
 
-    if not seen_exact then
-      -- 精确：文本用你敲的原样（大小写），释义来自 AI 词库或桥刚返回的
-      local meaning = meaning_for(env, input_text) or dropped
+    -- 1) 精确命中 AI 词库（半截词打 dijkstra 的完整形式）：直接带释义发出来
+    local exact_meaning = meaning_for(env, input_text) or dropped
+    local emitted = false
+    if exact_meaning and not seen_exact then
       local cand = Candidate("en_ai", start, stop, input_text, "")
-      cand.quality = 0.05
-      if meaning then apply_comment(cand, meaning) end
-      yield(cand)
+      cand.quality = Q_AI_EXACT
+      apply_comment(cand, exact_meaning)
+      ai_exact[#ai_exact + 1] = cand
+      emitted = true
     end
 
-    -- 前缀补全：AI 词库里以当前输入开头的词（最多 ai_completion 条）
+    -- 2) 前缀补全：AI 词库里以当前输入开头的词（最多 ai_completion 条）
     if env.ai_completion > 0 then
       local lower = input_text:lower()
       local hits = {}
@@ -261,9 +277,35 @@ function M.func(input, env)
         return a < b
       end)
       for i = 1, math.min(#hits, env.ai_completion) do
-        emit_ai(hits[i], ai_dict(env)[hits[i]].meaning, 0.04)
+        emit_ai(hits[i], ai_dict(env)[hits[i]].meaning, Q_AI_COMPLETE)
       end
     end
+
+    -- 3) 兜底：原样输入一条（保证任何输入都能上屏）。质量最低，所以永远排最后 ——
+    --    打 dijk 时第一位是 dijkstra，而不是 dijk 本身。
+    if not seen_exact and not emitted then
+      local cand = Candidate("en_ai", start, stop, input_text, "")
+      cand.quality = Q_RAW
+      raw_cand = cand
+    end
+  end
+
+  -- 输出顺序：**完全不动词库自己给的候选顺序**（Typst 片段、词库补全的先后都是对的），
+  -- 只把 AI 词接在它们后面、原样兜底之前：
+  --     词库候选 … → AI 精确命中 → AI 前缀补全 → 原样输入（最后）
+  -- 这样打 dijk 时第一位是 dijkstra 而不是 dijk 本身（本地查词的手感），
+  -- 同时打 typ 时 Typst 片段仍然在第一页。
+  for _, cand in ipairs(ai_exact) do
+    out[#out + 1] = cand
+  end
+  for _, cand in ipairs(ai_more) do
+    out[#out + 1] = cand
+  end
+  if raw_cand then
+    out[#out + 1] = raw_cand
+  end
+  for _, cand in ipairs(out) do
+    yield(cand)
   end
 end
 
