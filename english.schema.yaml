@@ -121,6 +121,8 @@ en_ai:
   width: 12            # 滚动窗口宽度（字符数，一个汉字算 1）；释义超过它才滚
   step: 1              # 每次重绘前进几个字符
   min_input_len: 2     # 太短的词不查
-  shift_right: ascii   # 右 Shift：ascii = 中文⇄西文（默认）；schema = 等同左 Shift 切方案
+  # 左右 Shift 单击各干什么（想对调就换这两个值）
+  shift_left: ascii    # 左 Shift：ascii = 中文⇄西文（默认）；schema = 切英文模式
+  shift_right: schema  # 右 Shift：schema = 中文⇄英文模式（默认）；ascii = 中文⇄西文
   auto_space: 1        # 选词上屏时自动补一个尾随空格（0 = 不补）
   auto_space_keys: space,Return   # 哪些键触发补空格（逗号分隔）

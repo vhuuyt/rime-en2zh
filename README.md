@@ -140,8 +140,12 @@ python scripts\install_autostart.py          # 装开机自启（--remove 卸载
 
 | 键 | 作用 |
 |---|---|
-| **左 `Shift`（单击）** | **中文 ⇄ 英文模式**：中文方案里单击切到「英文模式」，再单击切回刚才那个中文方案（**标点跟着切回中文**）。按住 Shift 打字不受影响（大写照常） |
-| **右 `Shift`（单击）** | **中文 ⇄ 西文**（Rime 原生手感）：只切 `ascii_mode`，不换方案。想让它等同左 Shift：`english.schema.yaml` 里 `en_ai/shift_right: schema` |
+| **左 `Shift`（单击）** | **中文 ⇄ 西文**（Rime 原生手感）：只切 `ascii_mode`，不换方案。按住 Shift 打字不受影响（大写照常） |
+| **右 `Shift`（单击）** | **中文 ⇄ 英文模式**：中文方案里单击切到「英文模式」（带释义），再单击切回刚才那个中文方案（**标点跟着切回中文**） |
+
+> 左右可以换回来：中文方案的 `*.custom.yaml` 与 `english.schema.yaml` 里都有
+> `en_ai/shift_left` / `en_ai/shift_right`，取值 `ascii`（中⇄西）或 `schema`（中⇄英文模式）。
+> **两处都要改**，中文模式下用的是 `*.custom.yaml` 那份。
 | `F4` / `Ctrl+Shift+E` / `` Ctrl+` `` | 方案选单（切方案、切 AI 档位、AI 开关） |
 | `Caps Lock` | 系统级大写（Shift 已被占用，大写在英文模式下用 Caps Lock） |
 

@@ -1,17 +1,14 @@
 -- lua/mode_switch.lua        【三方案通用】processor（必须放在 processors 第一位）
 --
--- 左 Shift 单击切换方案：
---   中文（双拼 / 朙月）→ english（带释义的英文查词）
---   english           → 切回刚才那个中文方案
+-- 单击（按下后没按别的键就松开）切什么，左右两侧各配各的：
 --
--- 右 Shift 单击保留 Rime 原生手感：中文 ⇄ 西文（只切 ascii_mode，不切方案）。
--- 在英文模式里右 Shift 等同于左 Shift（切回中文方案）—— 英文模式本来就是英文，
--- 再切「西文」没意义。
+--   en_ai/shift_left    默认 ascii      中文 ⇄ 西文（只切 ascii_mode，不换方案）
+--   en_ai/shift_right   默认 schema     中文 ⇄ 英文模式（切到 english 查词方案，
+--                                       再单击切回刚才那个中文方案）
 --
--- 右 Shift 的行为可配（en_ai/shift_right）：
---   ascii  （默认）中文 ⇄ 西文，不切方案
---   schema        等同左 Shift，切方案（macOS 上 Caps Lock 已经管系统输入法切换，
---                 若觉得多一层西文多余，把它设成 schema）
+--   想换回来：把两个值对调即可（shift_left: schema / shift_right: ascii）。
+--
+-- 英文模式里两侧都是"切回中文方案"—— 英文模式本来就是英文，再切「西文」没意义。
 --
 -- 判定沿用 Rime 原生「单击 Shift 切西文」的手感：
 --   按下 Shift 记一笔；这期间按了别的键 → 算「按住 Shift 打字」，不切换；
@@ -57,7 +54,7 @@ local function is_right_shift(key, repr)
   return repr:match("Shift_R$") ~= nil
 end
 
--- 右 Shift 的行为：中文 ⇄ 西文（Rime 原生的 ascii_mode 切换）
+-- 「中文 ⇄ 西文」：Rime 原生的 ascii_mode 切换（不换方案）
 local function toggle_ascii_mode(ctx)
   if ctx:is_composing() then
     ctx:clear()          -- 有未上屏的码先丢掉，和按 Esc 一样，再切模式
@@ -76,7 +73,9 @@ function M.init(env)
   env.shift_down = false
   env.typed = false
   local cfg = env.engine.schema and env.engine.schema.config
-  env.shift_right = (cfg_str(cfg, "en_ai/shift_right") or "ascii"):lower()
+  -- 左右各配各的：ascii = 中文⇄西文；schema = 中文⇄英文模式
+  env.shift_left = (cfg_str(cfg, "en_ai/shift_left") or "ascii"):lower()
+  env.shift_right = (cfg_str(cfg, "en_ai/shift_right") or "schema"):lower()
 end
 
 function M.func(key, env)
@@ -94,8 +93,9 @@ function M.func(key, env)
 
       local ctx = env.engine.context
       local cur = current_schema(env)
-      if is_right_shift(key, repr) and cur ~= ENGLISH and env.shift_right ~= "schema" then
-        -- 右 Shift：中文 ⇄ 西文（不切方案）
+      local side = is_right_shift(key, repr) and env.shift_right or env.shift_left
+      if cur ~= ENGLISH and side ~= "schema" then
+        -- 这一侧配的是 ascii：中文 ⇄ 西文（不切方案）
         toggle_ascii_mode(ctx)
         return 1
       end

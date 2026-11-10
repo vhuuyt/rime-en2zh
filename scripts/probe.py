@@ -149,6 +149,8 @@ SIG = {
     "free_context": (C.c_int, [C.POINTER(Context)]),
     "clear_composition": (None, [C.c_size_t]),
     "change_page": (C.c_int, [C.c_size_t, C.c_int]),
+    "get_option": (C.c_int, [C.c_size_t, C.c_char_p]),
+    "get_current_schema": (C.c_int, [C.c_size_t, C.c_char_p, C.c_size_t]),
     "get_commit": (C.c_int, [C.c_size_t, C.POINTER(Commit)]),
     "free_commit": (C.c_int, [C.POINTER(Commit)]),
 }
@@ -337,6 +339,54 @@ def cmd_auto(rime, word, seconds):
     return 0 if ok else 1
 
 
+def cmd_shift(cn_schema):
+    """验证左右 Shift 单击分别干什么（中文 ⇄ 西文 / 中文 ⇄ 英文模式）。"""
+    r = Rime(cn_schema)
+    fails = []
+
+    def want(cond, msg):
+        print(("  [PASS] " if cond else "  [FAIL] ") + msg)
+        if not cond:
+            fails.append(msg)
+
+    def schema():
+        buf = C.create_string_buffer(64)
+        r.api.get_current_schema(r.sid, buf, len(buf))
+        return buf.value.decode()
+
+    def ascii_on():
+        return bool(r.api.get_option(r.sid, b"ascii_mode"))
+
+    def click(key):
+        # 单击 = 按下 + 松开两个事件（Rime 用 "Release+" 前缀表示松开的键）
+        r.api.simulate_key_sequence(r.sid, ("{%s}" % key).encode())
+        time.sleep(0.05)
+        r.api.simulate_key_sequence(r.sid, ("{Release+%s}" % key).encode())
+        time.sleep(0.3)
+
+    try:
+        click("Shift_L")
+        want(ascii_on() and schema() == cn_schema,
+             f"左 Shift 单击 = 中文⇄西文（ascii_mode={ascii_on()}, 方案={schema()}）")
+        click("Shift_L")
+        want(not ascii_on(), f"再按一次左 Shift 回到中文（ascii_mode={ascii_on()}）")
+
+        click("Shift_R")
+        want(schema() == "english",
+             f"右 Shift 单击 = 切到英文模式（方案={schema()}）")
+        click("Shift_R")
+        want(schema() == cn_schema, f"再按一次右 Shift 切回中文（方案={schema()}）")
+    finally:
+        r.close()
+
+    print("")
+    if fails:
+        print(f"{len(fails)} 项失败")
+        return 1
+    print("全部通过")
+    return 0
+
+
 def cmd_check(rime):
     """改完词库/方案跑这个：几条最基本的行为必须成立。"""
     fails = []
@@ -390,10 +440,15 @@ def main():
     ap.add_argument("--commit", action="store_true", help="看上屏文本（自动补一个空格）")
     ap.add_argument("--pages", type=int, default=1, help="翻几页；0 = 翻到底（默认 1）")
     ap.add_argument("--check", action="store_true", help="跑冒烟断言")
+    ap.add_argument("--shift", action="store_true",
+                    help="验证左右 Shift 单击的分工（中文⇄西文 / 中文⇄英文模式）")
     ap.add_argument("--auto", type=float, metavar="秒", default=0,
                     help="打字后等 N 秒，验证桥自动补 AI 释义（会真的调一次 API）")
     ap.add_argument("--verbose", action="store_true", help="显示 librime 的 ERROR 日志")
     args = ap.parse_args()
+
+    if args.shift:
+        return cmd_shift(os.environ.get("RIME_CN_SCHEMA", "double_pinyin_mspy"))
 
     rime = Rime(args.schema, verbose=args.verbose)
     try:

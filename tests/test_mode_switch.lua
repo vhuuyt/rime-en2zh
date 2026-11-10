@@ -31,7 +31,7 @@ local function mk_key(repr, release, keycode)
   }
 end
 
-local function mk_env(schema_id, shift_right)
+local function mk_env(schema_id, shift_right, shift_left)
   local props = {}
   local applied = {}
   local options = {}
@@ -42,6 +42,7 @@ local function mk_env(schema_id, shift_right)
         config = {
           get_string = function(_, key)
             if key == "en_ai/shift_right" then return shift_right end
+            if key == "en_ai/shift_left" then return shift_left end
             return nil
           end,
         },
@@ -49,7 +50,7 @@ local function mk_env(schema_id, shift_right)
       context = {
         set_property = function(_, k, v) props[k] = v end,
         get_property = function(_, k) return props[k] or "" end,
-        -- 右 Shift 走的是 ascii_mode 开关
+        -- 配成 ascii 的那一侧走 ascii_mode 开关
         set_option = function(_, k, v) options[k] = v and true or false end,
         get_option = function(_, k) return options[k] and true or false end,
         is_composing = function() return false end,
@@ -85,12 +86,12 @@ print("== mode_switch 测试 ==")
 
 -- 1. 中文方案：Shift 按下 → 放行（不拦截，否则打不出大写）
 local env = mk_env("double_pinyin_mspy")
-local r = env.engine and M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env)
+local r = env.engine and M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env)
 check("Shift 按下不拦截", r == 2, "r=" .. tostring(r))
 check("Shift 按下不切方案", #env.applied == 0, "n=" .. #env.applied)
 
 -- 2. Shift 松开（期间没按别的键）→ 切到 english
-r = M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env)
+r = M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env)
 check("Shift 松开切方案", r == 1, "r=" .. tostring(r))
 check("切到 english", env.applied[1] == "english", tostring(env.applied[1]))
 check("记下了来源方案", env.engine.context:get_property("last_cn_schema") == "double_pinyin_mspy")
@@ -98,8 +99,8 @@ check("记下了来源方案", env.engine.context:get_property("last_cn_schema")
 -- 3. english 方案：Shift 松开 → 切回刚才的中文方案
 local env2 = mk_env("english")
 env2.engine.context.set_property(env2.engine.context, "last_cn_schema", "luna_pinyin")
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env2)
-r = M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env2)
+M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env2)
+r = M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env2)
 check("english 里 Shift 松开切回中文", r == 1, "r=" .. tostring(r))
 check("切回 luna_pinyin", env2.applied[1] == "luna_pinyin", tostring(env2.applied[1]))
 
@@ -118,36 +119,48 @@ r = M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env4)  -- 松开
 check("按住 Shift 后松开不切换", #env4.applied == 0, "n=" .. #env4.applied)
 check("按住 Shift 后松开放行", r == 2, "r=" .. tostring(r))
 
--- 6. 右 Shift 是 Rime 原生的「中文 ⇄ 西文」：只切 ascii_mode，不切方案
+-- 6. 默认：左 Shift 单击 = 中文 ⇄ 西文（只切 ascii_mode，不换方案）
 local env5 = mk_env("luna_pinyin")
-M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env5)
-local r5 = M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env5)
-check("右 Shift 单击被吃掉", r5 == 1, "r=" .. tostring(r5))
-check("右 Shift 打开西文（ascii_mode）", env5.options["ascii_mode"] == true,
+M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env5)
+local r5 = M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env5)
+check("左 Shift 单击被吃掉", r5 == 1, "r=" .. tostring(r5))
+check("左 Shift 打开西文（ascii_mode）", env5.options["ascii_mode"] == true,
       tostring(env5.options["ascii_mode"]))
-check("右 Shift 不切方案", #env5.applied == 0, "n=" .. #env5.applied)
-M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env5)
-M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env5)
+check("左 Shift 不切方案", #env5.applied == 0, "n=" .. #env5.applied)
+M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env5)
+M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env5)
 check("再按一次回到中文", env5.options["ascii_mode"] == false,
       tostring(env5.options["ascii_mode"]))
 
--- 6b. en_ai/shift_right: schema → 右 Shift 等同左 Shift（切方案）
-local env6 = mk_env("double_pinyin_mspy", "schema")
+-- 6b. 默认：右 Shift 单击 = 中文 ⇄ 英文模式（切方案）
+local env6 = mk_env("double_pinyin_mspy")
 M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env6)
 local r6 = M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env6)
-check("shift_right=schema 时右 Shift 切方案", r6 == 1 and env6.applied[1] == "english",
+check("右 Shift 切到英文模式", r6 == 1 and env6.applied[1] == "english",
       "r=" .. tostring(r6) .. " schema=" .. tostring(env6.applied[1]))
-check("shift_right=schema 时不碰 ascii_mode", env6.options["ascii_mode"] == nil,
+check("右 Shift 不碰 ascii_mode", env6.options["ascii_mode"] == nil,
       tostring(env6.options["ascii_mode"]))
+
+-- 6c. 想换回来：shift_left: schema / shift_right: ascii
+local env6c = mk_env("double_pinyin_mspy", "ascii", "schema")
+M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env6c)
+local r6c = M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env6c)
+check("shift_left=schema 时左 Shift 切方案", r6c == 1 and env6c.applied[1] == "english",
+      "r=" .. tostring(r6c))
+local env6d = mk_env("luna_pinyin", "ascii", "schema")
+M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env6d)
+M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env6d)
+check("shift_right=ascii 时右 Shift 切西文", env6d.options["ascii_mode"] == true
+      and #env6d.applied == 0, tostring(env6d.options["ascii_mode"]))
 
 -- 7. 连续两次单击：切换 → 切回
 local env6 = mk_env("double_pinyin_mspy")
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env6)
-M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env6)     -- → english
+M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env6)
+M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env6)     -- → english
 local env7 = mk_env("english")
 env7.engine.context.set_property(env7.engine.context, "last_cn_schema", "double_pinyin_mspy")
-M.func(mk_key("Shift+Shift_L", false, 0xFFE1), env7)
-M.func(mk_key("Shift+Shift_L", true, 0xFFE1), env7)     -- → 回到中文
+M.func(mk_key("Shift+Shift_R", false, 0xFFE2), env7)
+M.func(mk_key("Shift+Shift_R", true, 0xFFE2), env7)     -- → 回到中文
 check("切过去再切回来", env7.applied[1] == "double_pinyin_mspy", tostring(env7.applied[1]))
 
 -- 8. 其它按键完全不干预

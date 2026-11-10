@@ -122,8 +122,8 @@ filter 直接把这些词当候选发出来（精确命中 + 前缀补全，见 
 | `Ctrl+Enter` | 上屏完整中文释义 | `en_ai_request.lua`（`en_ai/commit_key`） |
 | `Ctrl+Delete` | 删掉当前 AI 补录词，收起候选框 | `en_ai_request.lua`（`en_ai/delete_key`；macOS 备选 `delete_key_alt`） |
 | `Tab` | 滚动 / 放行 / 问 AI | `en_ai_request.lua`（`en_ai/tab`、`tab_step`、`width`） |
-| 左 `Shift` 单击 | 中文 ⇄ 英文模式（切方案） | `mode_switch.lua` |
-| 右 `Shift` 单击 | 中文 ⇄ 西文（只切 `ascii_mode`） | `mode_switch.lua`（`en_ai/shift_right: schema` 可改成切方案） |
+| 左 `Shift` 单击 | 中文 ⇄ 西文（只切 `ascii_mode`） | `mode_switch.lua`（`en_ai/shift_left`，默认 `ascii`） |
+| 右 `Shift` 单击 | 中文 ⇄ 英文模式（切方案） | `mode_switch.lua`（`en_ai/shift_right`，默认 `schema`） |
 | `F4` | 选单：自动空格、AI 档位、AI 开关 | schema 的 `switches` |
 
 `Shift` 单击的实现要点：只有"按下又松开、中间没敲别的键"才算单击；松开事件被吃掉，`ascii_composer` 收不到就不会顺手把 `ascii_mode` 也切了。所以按住 Shift 打大写完全不受影响。

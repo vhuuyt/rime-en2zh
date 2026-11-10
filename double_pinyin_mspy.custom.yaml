@@ -33,10 +33,11 @@ patch:
   key_binder/select_first_character: bracketleft
   key_binder/select_last_character: bracketright
 
-  # ---- 右 Shift 的行为（左 Shift 固定是「中文 ⇄ 英文模式」）----
-  # ascii  = 中文 ⇄ 西文，不切方案（默认）
-  # schema = 等同左 Shift，切方案（macOS 上 Caps 已管系统输入法切换时更顺手）
-  en_ai/shift_right: ascii
+  # ---- 单击 Shift 切什么（左右各配各的；想对调就换这两个值）----
+  #   ascii  = 中文 ⇄ 西文（只切 ascii_mode，不换方案）
+  #   schema = 中文 ⇄ 英文模式（切到 english 查词方案）
+  en_ai/shift_left: ascii
+  en_ai/shift_right: schema
 
   # ---- Typst 片段词典的触发词 ----
   typst_dict/trigger: typ
